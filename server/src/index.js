@@ -27,7 +27,7 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: process.env.NODE_ENV === 'production' 
-      ? ["https://peps-peckerball.vercel.app", "https://peps-peckerball-git-main-wasdazed.vercel.app", "https://peps-peckerball.vercel.app/"]
+      ? ["https://peps-peckerball-production.up.railway.app"]
       : ["http://localhost:5173", "http://localhost:5174"],
     methods: ["GET", "POST"],
     allowedHeaders: ["my-custom-header"],
