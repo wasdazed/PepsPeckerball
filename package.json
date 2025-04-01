@@ -2,8 +2,9 @@
   "name": "arcade-volleyball",
   "version": "1.0.0",
   "description": "A multiplayer 2D Arcade Volleyball clone",
-  "main": "index.js",
+  "main": "server/src/index.js",
   "scripts": {
+    "start": "cd server && npm start",
     "start:server": "cd server && npm start",
     "start:client": "cd client && npm start",
     "dev": "concurrently \"npm run start:server\" \"npm run start:client\"",
