@@ -210,6 +210,9 @@ function animate() {
   
   if (gameActive) {
     const lerpFactor = 0.2;
+    
+    // Player positions - apply faster movement
+    const speedFactor = 1.0; // Adjust if needed for smoothness
     const targetP1X = networkState.p1.x + PLAYER_WIDTH / 2;
     const targetP1Y = networkState.p1.y;
     const targetP2X = networkState.p2.x + PLAYER_WIDTH / 2;
@@ -217,17 +220,18 @@ function animate() {
     const targetBallX = networkState.ball.x;
     const targetBallY = networkState.ball.y;
 
-    player1.position.x += (targetP1X - player1.position.x) * lerpFactor;
-    player1.position.y += (targetP1Y - player1.position.y) * lerpFactor;
-    player2.position.x += (targetP2X - player2.position.x) * lerpFactor;
-    player2.position.y += (targetP2Y - player2.position.y) * lerpFactor;
+    // Use faster lerp for snappier movement (0.5 instead of 0.2)
+    player1.position.x += (targetP1X - player1.position.x) * 0.5 * speedFactor;
+    player1.position.y += (targetP1Y - player1.position.y) * 0.5 * speedFactor;
+    player2.position.x += (targetP2X - player2.position.x) * 0.5 * speedFactor;
+    player2.position.y += (targetP2Y - player2.position.y) * 0.5 * speedFactor;
 
     if (networkState.serving) {
       ball.position.x = targetBallX;
       ball.position.y = targetBallY;
     } else {
-      ball.position.x += (targetBallX - ball.position.x) * lerpFactor;
-      ball.position.y += (targetBallY - ball.position.y) * lerpFactor;
+      ball.position.x += (targetBallX - ball.position.x) * 0.5 * speedFactor;
+      ball.position.y += (targetBallY - ball.position.y) * 0.5 * speedFactor;
     }
     ball.visible = networkState.ball.visible;
   }
@@ -373,8 +377,10 @@ function handleKeyDown(e) {
       break;
     case ' ': // Spacebar
       e.preventDefault(); // Prevent page scrolling
-      keyState.jump = true;
-      socket.emit('playerInput', { action: 'jump' });
+      if (!keyState.jump) {
+        keyState.jump = true;
+        socket.emit('playerInput', { action: 'jump' });
+      }
       break;
   }
 }
@@ -385,18 +391,20 @@ function handleKeyUp(e) {
   switch (e.key) {
     case 'ArrowLeft':
       keyState.left = false;
-      if (!keyState.right) {
-        socket.emit('playerInput', { action: 'stop' });
-      } else {
+      // Immediately send the correct state
+      if (keyState.right) {
         socket.emit('playerInput', { action: 'move', direction: 'right' });
+      } else {
+        socket.emit('playerInput', { action: 'stop' });
       }
       break;
     case 'ArrowRight':
       keyState.right = false;
-      if (!keyState.left) {
-        socket.emit('playerInput', { action: 'stop' });
-      } else {
+      // Immediately send the correct state
+      if (keyState.left) {
         socket.emit('playerInput', { action: 'move', direction: 'left' });
+      } else {
+        socket.emit('playerInput', { action: 'stop' });
       }
       break;
     case ' ': // Spacebar

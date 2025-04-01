@@ -14,9 +14,9 @@ const PLAYER_HEIGHT = 40;
 const BALL_RADIUS = 20;
 const NET_WIDTH = 10;
 const NET_HEIGHT = 120;
-const GRAVITY = 0.5;
-const JUMP_VELOCITY = -12;
-const MOVE_SPEED = 5;
+const GRAVITY = 1.5;         // Increased from 0.5 for faster falling
+const JUMP_VELOCITY = -20;   // Increased from -12 for higher jumps
+const MOVE_SPEED = 15;       // Increased from 5 for faster lateral movement
 const MAX_SCORE = 11;
 const GROUND_HEIGHT = 400;
 
