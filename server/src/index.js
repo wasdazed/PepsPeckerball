@@ -44,11 +44,13 @@ app.get('/health', (req, res) => {
 // Configure CORS properly for Socket.IO
 const io = new Server(server, {
   cors: {
-    origin: '*', // Allow all origins for testing
+    origin: ['https://pepspeckerball-production.up.railway.app', 'http://localhost:5173'],
     methods: ["GET", "POST"],
-    allowedHeaders: ["my-custom-header"],
     credentials: true
-  }
+  },
+  transports: ['polling', 'websocket'], // Explicitly allow polling first for better compatibility
+  pingTimeout: 60000,
+  pingInterval: 25000
 });
 
 // Serve static files
@@ -371,35 +373,25 @@ class GameSession {
       });
     }
     
-    // Try emitting directly to each player as a fallback
-    try {
-      io.to(this.id).emit('gameStateUpdate', {
-        p1: { x: this.player1.x, y: this.player1.y },
-        p2: { x: this.player2.x, y: this.player2.y },
-        ball: { x: this.ball.x, y: this.ball.y, visible: true },
-        serving: this.servingState.isServing
-      });
-    } catch (error) {
-      console.error(`Error broadcasting to room ${this.id}:`, error);
-      
-      // Fallback: emit directly to each player
-      try {
-        io.to(this.player1.id).emit('gameStateUpdate', {
-          p1: { x: this.player1.x, y: this.player1.y },
-          p2: { x: this.player2.x, y: this.player2.y },
-          ball: { x: this.ball.x, y: this.ball.y, visible: true },
-          serving: this.servingState.isServing
-        });
-        
-        io.to(this.player2.id).emit('gameStateUpdate', {
-          p1: { x: this.player1.x, y: this.player1.y },
-          p2: { x: this.player2.x, y: this.player2.y },
-          ball: { x: this.ball.x, y: this.ball.y, visible: true },
-          serving: this.servingState.isServing
-        });
-      } catch (fallbackError) {
-        console.error(`Fallback emission also failed:`, fallbackError);
-      }
+    // Get socket objects directly
+    const player1Socket = io.sockets.sockets.get(this.player1.id);
+    const player2Socket = io.sockets.sockets.get(this.player2.id);
+    
+    // Define game state object once to reduce duplication
+    const gameState = {
+      p1: { x: this.player1.x, y: this.player1.y },
+      p2: { x: this.player2.x, y: this.player2.y },
+      ball: { x: this.ball.x, y: this.ball.y, visible: true },
+      serving: this.servingState.isServing
+    };
+    
+    // Always emit directly to player sockets - more reliable than room broadcasting
+    if (player1Socket) {
+      player1Socket.emit('gameStateUpdate', gameState);
+    }
+    
+    if (player2Socket) {
+      player2Socket.emit('gameStateUpdate', gameState);
     }
   }
 
@@ -430,11 +422,17 @@ class GameSession {
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {
-  console.log(`Player connected: ${socket.id}, Total clients: ${Object.keys(io.sockets.sockets).length}`);
+  const clientTransport = socket.conn.transport.name;
+  console.log(`Player connected: ${socket.id}, Transport: ${clientTransport}, Total clients: ${Object.keys(io.sockets.sockets).length}`);
+  
+  // Log transport upgrades
+  socket.conn.on('upgrade', (transport) => {
+    console.log(`Socket ${socket.id} upgraded transport: ${transport.name}`);
+  });
 
   // Handle client disconnection
-  socket.on('disconnect', () => {
-    console.log(`Player disconnected: ${socket.id}, Remaining clients: ${Object.keys(io.sockets.sockets).length - 1}`);
+  socket.on('disconnect', (reason) => {
+    console.log(`Player disconnected: ${socket.id}, Reason: ${reason}, Remaining clients: ${Object.keys(io.sockets.sockets).length - 1}`);
     
     // Remove from waiting queue if they were waiting
     const waitingIndex = waitingPlayers.indexOf(socket.id);
@@ -462,11 +460,16 @@ io.on('connection', (socket) => {
 
   // Handle find match request
   socket.on('findMatch', () => {
-    console.log(`Player ${socket.id} looking for match. Current queue:`, waitingPlayers);
+    console.log(`FindMatch received from ${socket.id}`);
     
-    // Add player to waiting queue
-    waitingPlayers.push(socket.id);
-    console.log(`Player ${socket.id} added to queue. Queue size: ${waitingPlayers.length}`);
+    // Check if already in queue, don't add twice
+    if (!waitingPlayers.includes(socket.id)) {
+      // Add player to waiting queue
+      waitingPlayers.push(socket.id);
+      console.log(`Player ${socket.id} added to queue. Queue size: ${waitingPlayers.length}, Queue:`, waitingPlayers);
+    } else {
+      console.log(`Player ${socket.id} already in queue. Queue size: ${waitingPlayers.length}, Queue:`, waitingPlayers);
+    }
     
     // Check if we can create a match
     if (waitingPlayers.length >= 2) {
@@ -483,8 +486,12 @@ io.on('connection', (socket) => {
       const player1Socket = io.sockets.sockets.get(player1Id);
       const player2Socket = io.sockets.sockets.get(player2Id);
       
+      let player1Joined = false;
+      let player2Joined = false;
+      
       if (player1Socket) {
         player1Socket.join(session.id);
+        player1Joined = true;
         console.log(`Player 1 (${player1Id}) joined room ${session.id}`);
       } else {
         console.error(`Error: Socket for player 1 (${player1Id}) not found!`);
@@ -492,14 +499,22 @@ io.on('connection', (socket) => {
       
       if (player2Socket) {
         player2Socket.join(session.id);
+        player2Joined = true;
         console.log(`Player 2 (${player2Id}) joined room ${session.id}`);
       } else {
         console.error(`Error: Socket for player 2 (${player2Id}) not found!`);
       }
       
-      // Notify both players of the match
-      io.to(player1Id).emit('matchFound', { sessionId: session.id, playerNum: 1 });
-      io.to(player2Id).emit('matchFound', { sessionId: session.id, playerNum: 2 });
+      // Notify both players of the match with direct messages to ensure delivery
+      if (player1Joined) {
+        player1Socket.emit('matchFound', { sessionId: session.id, playerNum: 1 });
+        console.log(`Emitted matchFound to player 1 (${player1Id})`);
+      }
+      
+      if (player2Joined) {
+        player2Socket.emit('matchFound', { sessionId: session.id, playerNum: 2 });
+        console.log(`Emitted matchFound to player 2 (${player2Id})`);
+      }
       
       console.log(`Match created: ${session.id} between ${player1Id} and ${player2Id}`);
     }

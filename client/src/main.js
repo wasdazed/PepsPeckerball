@@ -17,13 +17,17 @@ console.log('Connecting to server at:', SERVER_URL);
 const socket = io(SERVER_URL, { 
   reconnectionDelayMax: 10000,
   reconnectionAttempts: 10,
-  transports: ['websocket', 'polling'], // Try WebSocket first, fall back to polling
   timeout: 10000 // Longer timeout
 });
 
-// Debug socket connection
+// Log transport changes for debugging
 socket.on('connect', () => {
   console.log('Connected to server with socket ID:', socket.id);
+  console.log('Transport used:', socket.io.engine.transport.name);
+  
+  socket.io.engine.on('upgrade', (transport) => {
+    console.log('Transport upgraded to:', transport.name);
+  });
   
   // If user was waiting for a match, re-emit findMatch
   if (document.getElementById('waiting-screen').classList.contains('visible') || 
