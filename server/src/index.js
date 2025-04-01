@@ -44,11 +44,11 @@ app.get('/health', (req, res) => {
 // Configure CORS properly for Socket.IO
 const io = new Server(server, {
   cors: {
-    origin: ['https://pepspeckerball-production.up.railway.app', 'http://localhost:5173'],
+    origin: true, // Allow all origins
     methods: ["GET", "POST"],
     credentials: true
   },
-  transports: ['polling', 'websocket'], // Explicitly allow polling first for better compatibility
+  transports: ['polling', 'websocket'],
   pingTimeout: 60000,
   pingInterval: 25000
 });

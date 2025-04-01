@@ -12,15 +12,8 @@ const NET_HEIGHT = 120;
 const GROUND_HEIGHT = 20;
 
 // Socket.IO connection
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
-console.log('Connecting to server at:', SERVER_URL);
-const socket = io(SERVER_URL, { 
-  reconnectionDelayMax: 10000,
-  reconnectionAttempts: 10,
-  timeout: 10000 // Longer timeout
-});
-
-// Log transport changes for debugging
+console.log('Setting up Socket.IO connection...');
+const socket = io(); // Relative URL - connects to same domain
 socket.on('connect', () => {
   console.log('Connected to server with socket ID:', socket.id);
   console.log('Transport used:', socket.io.engine.transport.name);
