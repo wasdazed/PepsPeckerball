@@ -23,11 +23,16 @@ const GROUND_HEIGHT = 400;
 const app = express();
 const server = http.createServer(app);
 
+// Health check route for Railway
+app.get('/', (req, res) => {
+  res.status(200).send('Server is running');
+});
+
 // Configure CORS properly for Socket.IO
 const io = new Server(server, {
   cors: {
     origin: process.env.NODE_ENV === 'production' 
-      ? ["https://peps-peckerball-production.up.railway.app"]
+      ? ["https://peps-peckerball.vercel.app", "https://peps-peckerball-git-main-wasdazed.vercel.app", "https://peps-peckerball.vercel.app/"]
       : ["http://localhost:5173", "http://localhost:5174"],
     methods: ["GET", "POST"],
     allowedHeaders: ["my-custom-header"],
@@ -376,18 +381,14 @@ io.on('connection', (socket) => {
 
   // Handle find match request
   socket.on('findMatch', () => {
-    console.log(`Player ${socket.id} looking for match. Current queue:`, waitingPlayers);
-    
     // Add player to waiting queue
     waitingPlayers.push(socket.id);
-    console.log(`Player ${socket.id} added to queue. Queue size: ${waitingPlayers.length}`);
+    console.log(`Player ${socket.id} looking for match. Queue size: ${waitingPlayers.length}`);
     
     // Check if we can create a match
     if (waitingPlayers.length >= 2) {
       const player1Id = waitingPlayers.shift();
       const player2Id = waitingPlayers.shift();
-      
-      console.log(`Creating match between ${player1Id} and ${player2Id}`);
       
       // Create a new game session
       const session = new GameSession(player1Id, player2Id);

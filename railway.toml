@@ -5,7 +5,7 @@ buildCommand = "npm install && cd server && npm install"
 [deploy]
 startCommand = "npm start"
 healthcheckPath = "/"
-healthcheckTimeout = 100
+healthcheckTimeout = 300
 
 [environments]
 production.numReplicas = 1 
