@@ -13,7 +13,24 @@ const GROUND_HEIGHT = 20;
 
 // Socket.IO connection
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
-const socket = io(SERVER_URL);
+console.log('Connecting to server at:', SERVER_URL);
+const socket = io(SERVER_URL, { 
+  reconnectionDelayMax: 10000,
+  reconnectionAttempts: 10
+});
+
+// Debug socket connection
+socket.on('connect', () => {
+  console.log('Connected to server with socket ID:', socket.id);
+});
+
+socket.on('connect_error', (error) => {
+  console.error('Socket connection error:', error);
+});
+
+socket.on('disconnect', (reason) => {
+  console.log('Disconnected from server:', reason);
+});
 
 // Game state
 let playerNum = 0;
@@ -241,10 +258,6 @@ console.log('Game container:', {
 });
 
 // Socket event handlers
-socket.on('connect', () => {
-  console.log('Connected to server');
-});
-
 socket.on('matchFound', (data) => {
   console.log('Match found', data);
   sessionId = data.sessionId;

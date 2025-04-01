@@ -3,6 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
+const fs = require('fs');
 
 // Game constants
 const TICK_RATE = 30; // Updates per second
@@ -23,30 +24,72 @@ const GROUND_HEIGHT = 400;
 const app = express();
 const server = http.createServer(app);
 
+// Debug logging for file serving
+try {
+  const clientDistPath = path.join(__dirname, '../../client/dist');
+  if (fs.existsSync(clientDistPath)) {
+    console.log(`Client dist directory exists. Contents:`, fs.readdirSync(clientDistPath));
+  } else {
+    console.log(`Client dist directory does not exist: ${clientDistPath}`);
+  }
+} catch (err) {
+  console.error(`Error checking client files:`, err);
+}
+
 // Health check route for Railway
-app.get('/', (req, res) => {
+app.get('/health', (req, res) => {
   res.status(200).send('Server is running');
 });
 
 // Configure CORS properly for Socket.IO
 const io = new Server(server, {
   cors: {
-    origin: process.env.NODE_ENV === 'production' 
-      ? ["https://peps-peckerball.vercel.app", "https://peps-peckerball-git-main-wasdazed.vercel.app", "https://peps-peckerball.vercel.app/"]
-      : ["http://localhost:5173", "http://localhost:5174"],
+    origin: '*', // Allow all origins for testing
     methods: ["GET", "POST"],
     allowedHeaders: ["my-custom-header"],
     credentials: true
   }
 });
 
-// Serve static files in production
-if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(path.join(__dirname, '../../client/dist')));
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '../../client/dist/index.html'));
-  });
-}
+// Serve static files
+app.use(express.static(path.join(__dirname, '../../client/dist')));
+
+// Fallback route for SPA
+app.get('*', (req, res) => {
+  const indexPath = path.join(__dirname, '../../client/dist/index.html');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.status(200).send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Pepe's Peckerball Server</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
+          h1 { color: #333; }
+        </style>
+      </head>
+      <body>
+        <h1>Pepe's Peckerball Server is Running</h1>
+        <p>The game server is operational and ready for WebSocket connections.</p>
+        <p>To play the game:</p>
+        <ol>
+          <li>Open the client at <a href="https://peps-peckerball.vercel.app">https://peps-peckerball.vercel.app</a></li>
+          <li>Click "Find Match" to start a game</li>
+          <li>Use arrow keys to move and spacebar to jump</li>
+        </ol>
+        <p>Server information:</p>
+        <ul>
+          <li>Version: ${process.env.npm_package_version || 'unknown'}</li>
+          <li>Environment: ${process.env.NODE_ENV || 'development'}</li>
+          <li>CORS allowed origins: ${JSON.stringify(io.engine.opts.cors.origin)}</li>
+        </ul>
+      </body>
+      </html>
+    `);
+  }
+});
 
 // Game state
 const waitingPlayers = [];
