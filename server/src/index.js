@@ -9,7 +9,7 @@ const TICK_RATE = 30; // Updates per second
 const COURT_WIDTH = 800;
 const COURT_HEIGHT = 400;
 const PLAYER_WIDTH = 40;
-const PLAYER_HEIGHT = 60;
+const PLAYER_HEIGHT = 40;
 const BALL_RADIUS = 20;
 const NET_WIDTH = 10;
 const NET_HEIGHT = 120;
@@ -17,6 +17,7 @@ const GRAVITY = 0.5;
 const JUMP_VELOCITY = -12;
 const MOVE_SPEED = 5;
 const MAX_SCORE = 11;
+const GROUND_HEIGHT = 400;
 
 // Setup Express
 const app = express();
@@ -50,7 +51,7 @@ class GameSession {
     this.id = uuidv4();
     this.player1 = {
       id: player1Id,
-      x: COURT_WIDTH / 4,
+      x: 50,
       y: COURT_HEIGHT - PLAYER_HEIGHT,
       width: PLAYER_WIDTH,
       height: PLAYER_HEIGHT,
@@ -60,7 +61,7 @@ class GameSession {
     };
     this.player2 = {
       id: player2Id,
-      x: (COURT_WIDTH / 4) * 3,
+      x: COURT_WIDTH - PLAYER_WIDTH - 50,
       y: COURT_HEIGHT - PLAYER_HEIGHT,
       width: PLAYER_WIDTH,
       height: PLAYER_HEIGHT,
@@ -69,8 +70,8 @@ class GameSession {
       inputs: { left: false, right: false, jump: false }
     };
     this.ball = {
-      x: COURT_WIDTH / 4,
-      y: COURT_HEIGHT / 2,
+      x: 50,
+      y: COURT_HEIGHT - PLAYER_HEIGHT - PLAYER_HEIGHT - PLAYER_HEIGHT, // 40 units above player's top
       radius: BALL_RADIUS,
       velocity: { x: 0, y: 0 }
     };
@@ -80,8 +81,14 @@ class GameSession {
       width: NET_WIDTH,
       height: NET_HEIGHT
     };
+    this.servingState = {
+      isServing: true,
+      servingPlayer: 1,
+      serveTimer: 0,
+      serveDelay: 2000 // 2 seconds delay
+    };
+    this.server = 1;
     this.isGameActive = true;
-    this.server = 1; // Player 1 starts serving
     this.lastUpdateTime = Date.now();
     
     // Start the game loop for this session
@@ -96,23 +103,42 @@ class GameSession {
 
   update() {
     const now = Date.now();
-    const dt = Math.min(33, now - this.lastUpdateTime) / 16.67; // Cap delta time and normalize to ~60fps
+    const dt = Math.min(33, now - this.lastUpdateTime) / 16.67;
     this.lastUpdateTime = now;
 
-    // Only update if game is active
     if (!this.isGameActive) return;
 
-    // Update player positions based on inputs
+    // Always update players, regardless of serving state
     this.updatePlayer(this.player1, dt, 0, COURT_WIDTH / 2 - PLAYER_WIDTH);
     this.updatePlayer(this.player2, dt, COURT_WIDTH / 2, COURT_WIDTH - PLAYER_WIDTH);
-    
-    // Update ball physics
-    this.updateBall(dt);
 
-    // Check for scoring conditions
+    if (this.servingState.isServing) {
+      // Keep ball stationary at its initial position (set in resetBall)
+      // Do NOT update ball.x or ball.y here—let resetBall handle it once
+      this.ball.velocity = { x: 0, y: 0 }; // Ensure no residual velocity
+
+      const servingPlayer = this.servingState.servingPlayer === 1 ? this.player1 : this.player2;
+
+      // Check for collision to start the serve
+      if (this.checkCollision(
+        this.ball.x - this.ball.radius, this.ball.y - this.ball.radius,
+        this.ball.radius * 2, this.ball.radius * 2,
+        servingPlayer.x, servingPlayer.y,
+        servingPlayer.width, servingPlayer.height
+      )) {
+        // Only allow hitting the ball when the player is jumping
+        if (servingPlayer.velocity.y < 0) {
+          this.servingState.isServing = false;
+          this.ball.velocity.x = (this.servingState.servingPlayer === 1 ? 1 : -1) * 5;
+          this.ball.velocity.y = -8;
+        }
+      }
+    } else {
+      // Normal ball physics when not serving
+      this.updateBall(dt);
+    }
+
     this.checkScoring();
-
-    // Send game state to both players
     this.broadcastGameState();
   }
 
@@ -147,7 +173,7 @@ class GameSession {
   updateBall(dt) {
     // Apply gravity to the ball
     this.ball.velocity.y += GRAVITY * dt * 0.7; // Reduced gravity for ball
-
+    
     // Update position
     this.ball.x += this.ball.velocity.x * dt;
     this.ball.y += this.ball.velocity.y * dt;
@@ -155,7 +181,7 @@ class GameSession {
     // Bounce off walls
     if (this.ball.x - this.ball.radius < 0) {
       this.ball.x = this.ball.radius;
-      this.ball.velocity.x = -this.ball.velocity.x * 0.9; // Some energy loss
+      this.ball.velocity.x = -this.ball.velocity.x * 0.9;
     } else if (this.ball.x + this.ball.radius > COURT_WIDTH) {
       this.ball.x = COURT_WIDTH - this.ball.radius;
       this.ball.velocity.x = -this.ball.velocity.x * 0.9;
@@ -173,7 +199,6 @@ class GameSession {
       this.ball.radius * 2, this.ball.radius * 2,
       this.net.x, this.net.y, this.net.width, this.net.height
     )) {
-      // Determine which side of the net the ball hit
       if (this.ball.x < this.net.x) {
         this.ball.x = this.net.x - this.ball.radius;
       } else {
@@ -201,17 +226,30 @@ class GameSession {
   }
 
   handlePlayerBallCollision(player) {
-    // Calculate the hit angle based on where the ball hit the player
+    // During serving state, only the serving player can hit the ball
+    if (this.servingState.isServing) {
+      if ((this.servingState.servingPlayer === 1 && player === this.player1) ||
+          (this.servingState.servingPlayer === 2 && player === this.player2)) {
+        // Only allow hitting the ball when the player is jumping
+        if (player.velocity.y < 0) {
+          this.servingState.isServing = false;
+          this.ball.velocity.x = (this.servingState.servingPlayer === 1 ? 1 : -1) * 5;
+          this.ball.velocity.y = -8;
+        }
+        return;
+      } else {
+        return;
+      }
+    }
+
+    // Regular collision handling during gameplay
     const hitPoint = (this.ball.x - (player.x + player.width / 2)) / (player.width / 2);
-    
-    // Bounce off player with angle based on hit point
     this.ball.velocity.x = hitPoint * 10;
-    
-    // Add some upward velocity
     this.ball.velocity.y = -10 - Math.abs(hitPoint * 4);
     
-    // Ensure the ball is above the player
-    this.ball.y = player.y - this.ball.radius;
+    if (!this.servingState.isServing) {
+      this.ball.y = player.y - this.ball.radius;
+    }
   }
 
   checkCollision(x1, y1, w1, h1, x2, y2, w2, h2) {
@@ -223,18 +261,15 @@ class GameSession {
     if (this.ball.y + this.ball.radius >= COURT_HEIGHT) {
       // Determine which side the ball landed on
       if (this.ball.x < COURT_WIDTH / 2) {
-        // Ball landed on player 1's side
         this.player2.score++;
         this.server = 2;
         this.broadcastScore();
       } else {
-        // Ball landed on player 2's side
         this.player1.score++;
         this.server = 1;
         this.broadcastScore();
       }
 
-      // Check if the game is over
       if (this.player1.score >= MAX_SCORE || this.player2.score >= MAX_SCORE) {
         this.endGame();
       } else {
@@ -244,10 +279,17 @@ class GameSession {
   }
 
   resetBall() {
-    // Reset ball to the serving player's side
-    this.ball.x = this.server === 1 ? COURT_WIDTH / 4 : (COURT_WIDTH / 4) * 3;
-    this.ball.y = COURT_HEIGHT / 2;
+    const servingPlayer = this.server === 1 ? this.player1 : this.player2;
+    this.ball.x = servingPlayer.x + servingPlayer.width / 2;
+    this.ball.y = COURT_HEIGHT - PLAYER_HEIGHT - PLAYER_HEIGHT - PLAYER_HEIGHT; // 60 units above player's top
     this.ball.velocity = { x: 0, y: 0 };
+    
+    this.servingState = {
+      isServing: true,
+      servingPlayer: this.server,
+      serveTimer: 0,
+      serveDelay: 2000 // 2 seconds delay
+    };
   }
 
   endGame() {
@@ -269,18 +311,10 @@ class GameSession {
 
   broadcastGameState() {
     io.to(this.id).emit('gameStateUpdate', {
-      p1: {
-        x: this.player1.x,
-        y: this.player1.y
-      },
-      p2: {
-        x: this.player2.x,
-        y: this.player2.y
-      },
-      ball: {
-        x: this.ball.x,
-        y: this.ball.y
-      }
+      p1: { x: this.player1.x, y: this.player1.y },
+      p2: { x: this.player2.x, y: this.player2.y },
+      ball: { x: this.ball.x, y: this.ball.y, visible: true },
+      serving: this.servingState.isServing
     });
   }
 
@@ -291,6 +325,7 @@ class GameSession {
   }
 
   handlePlayerInput(playerId, inputData) {
+    console.log(`Received input from ${playerId}:`, inputData);
     const player = this.player1.id === playerId ? this.player1 : this.player2;
     if (inputData.action === 'move') {
       player.inputs.left = inputData.direction === 'left';

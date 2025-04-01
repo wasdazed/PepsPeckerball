@@ -1,14 +1,15 @@
 import { io } from 'socket.io-client';
 import * as THREE from 'three';
 
-// Game constants (need to match server)
+// Game constants (match server)
 const COURT_WIDTH = 800;
 const COURT_HEIGHT = 400;
 const PLAYER_WIDTH = 40;
-const PLAYER_HEIGHT = 60;
+const PLAYER_HEIGHT = 40;
 const BALL_RADIUS = 20;
 const NET_WIDTH = 10;
 const NET_HEIGHT = 120;
+const GROUND_HEIGHT = 20;
 
 // Socket.IO connection
 const socket = io('http://localhost:3001');
@@ -35,32 +36,47 @@ const playAgainBtn = document.getElementById('play-again-btn');
 const canvas = document.getElementById('gameCanvas');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setSize(COURT_WIDTH, COURT_HEIGHT);
+renderer.setClearColor(0x87CEEB); // Sky blue background
+
+// Add canvas to the game container
+const gameContainer = document.getElementById('game-container');
+gameContainer.appendChild(canvas);
 
 // Create a scene
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87CEEB); // Sky blue background
 
 // Camera (orthographic for 2D-like view)
 const camera = new THREE.OrthographicCamera(
-  0, COURT_WIDTH, 
-  0, COURT_HEIGHT, 
-  1, 1000
+  0,               // left
+  COURT_WIDTH,     // right
+  0,               // bottom
+  COURT_HEIGHT,    // top
+  1,               // near
+  1000             // far
 );
 camera.position.z = 100;
 
 // Create game objects
+console.log('Creating game objects...');
 const player1 = createPlayer(0x7777ff); // Blue player
 const player2 = createPlayer(0xff7777); // Red player
 const ball = createBall();
 const net = createNet();
 const court = createCourt();
 
+// Set initial positions
+player1.position.set(50 + PLAYER_WIDTH / 2, COURT_HEIGHT - PLAYER_HEIGHT, 5);
+player2.position.set(COURT_WIDTH - PLAYER_WIDTH - 50 + PLAYER_WIDTH / 2, COURT_HEIGHT - PLAYER_HEIGHT, 5);
+ball.position.set(50 + PLAYER_WIDTH / 2, COURT_HEIGHT - (2 * PLAYER_HEIGHT), 6);
+net.position.set(COURT_WIDTH / 2, COURT_HEIGHT - NET_HEIGHT / 2, 5);
+
 // Add objects to the scene
+console.log('Adding objects to scene...');
+scene.add(court);
+scene.add(net);
 scene.add(player1);
 scene.add(player2);
 scene.add(ball);
-scene.add(net);
-scene.add(court);
 
 // Input state
 const keyState = {
@@ -71,31 +87,39 @@ const keyState = {
 
 // Network state for interpolation
 const networkState = {
-  player1: { x: COURT_WIDTH / 4, y: COURT_HEIGHT - PLAYER_HEIGHT },
-  player2: { x: (COURT_WIDTH / 4) * 3, y: COURT_HEIGHT - PLAYER_HEIGHT },
-  ball: { x: COURT_WIDTH / 4, y: COURT_HEIGHT / 2 }
+  p1: { x: 50, y: COURT_HEIGHT - PLAYER_HEIGHT },
+  p2: { x: COURT_WIDTH - PLAYER_WIDTH - 50, y: COURT_HEIGHT - PLAYER_HEIGHT },
+  ball: { x: 50 + PLAYER_WIDTH / 2, y: COURT_HEIGHT - (2 * PLAYER_HEIGHT), visible: true },
+  serving: true
 };
 
 // Functions to create game objects
 function createPlayer(color) {
-  const geometry = new THREE.BoxGeometry(PLAYER_WIDTH, PLAYER_HEIGHT, 10);
-  const material = new THREE.MeshBasicMaterial({ color });
+  const geometry = new THREE.CircleGeometry(PLAYER_WIDTH / 2, 32);
+  const material = new THREE.MeshBasicMaterial({ 
+    color,
+    side: THREE.DoubleSide  // Make sure both sides are visible
+  });
   const player = new THREE.Mesh(geometry, material);
-  player.position.set(COURT_WIDTH / 4, COURT_HEIGHT - PLAYER_HEIGHT / 2, 0);
   return player;
 }
 
 function createBall() {
   const geometry = new THREE.CircleGeometry(BALL_RADIUS, 32);
-  const material = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const material = new THREE.MeshBasicMaterial({ 
+    color: 0xffffff,
+    side: THREE.DoubleSide  // Make sure both sides are visible
+  });
   const ball = new THREE.Mesh(geometry, material);
-  ball.position.set(COURT_WIDTH / 4, COURT_HEIGHT / 2, 0);
   return ball;
 }
 
 function createNet() {
   const geometry = new THREE.BoxGeometry(NET_WIDTH, NET_HEIGHT, 10);
-  const material = new THREE.MeshBasicMaterial({ color: 0xcccccc });
+  const material = new THREE.MeshBasicMaterial({ 
+    color: 0xcccccc,
+    side: THREE.DoubleSide  // Make sure both sides are visible
+  });
   const net = new THREE.Mesh(geometry, material);
   net.position.set(
     COURT_WIDTH / 2, 
@@ -107,27 +131,43 @@ function createNet() {
 
 function createCourt() {
   // Create the ground
-  const groundGeometry = new THREE.BoxGeometry(COURT_WIDTH, 10, 10);
-  const groundMaterial = new THREE.MeshBasicMaterial({ color: 0x008800 });
+  const groundGeometry = new THREE.BoxGeometry(COURT_WIDTH, GROUND_HEIGHT, 20);
+  const groundMaterial = new THREE.MeshBasicMaterial({ 
+    color: 0x008800,
+    side: THREE.DoubleSide
+  });
   const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-  ground.position.set(COURT_WIDTH / 2, COURT_HEIGHT + 5, 0);
+  ground.position.set(COURT_WIDTH / 2, GROUND_HEIGHT/2, 0);  // Adjusted to align with ground collision
 
   // Create left wall
-  const leftWallGeometry = new THREE.BoxGeometry(10, COURT_HEIGHT, 10);
-  const wallMaterial = new THREE.MeshBasicMaterial({ color: 0x888888 });
+  const leftWallGeometry = new THREE.BoxGeometry(20, COURT_HEIGHT, 20);
+  const wallMaterial = new THREE.MeshBasicMaterial({ 
+    color: 0x888888,
+    side: THREE.DoubleSide
+  });
   const leftWall = new THREE.Mesh(leftWallGeometry, wallMaterial);
-  leftWall.position.set(-5, COURT_HEIGHT / 2, 0);
+  leftWall.position.set(-10, COURT_HEIGHT / 2, 0);
 
   // Create right wall
-  const rightWallGeometry = new THREE.BoxGeometry(10, COURT_HEIGHT, 10);
+  const rightWallGeometry = new THREE.BoxGeometry(20, COURT_HEIGHT, 20);
   const rightWall = new THREE.Mesh(rightWallGeometry, wallMaterial);
-  rightWall.position.set(COURT_WIDTH + 5, COURT_HEIGHT / 2, 0);
+  rightWall.position.set(COURT_WIDTH + 10, COURT_HEIGHT / 2, 0);
+
+  // Create ceiling
+  const ceilingGeometry = new THREE.BoxGeometry(COURT_WIDTH, 20, 20);
+  const ceilingMaterial = new THREE.MeshBasicMaterial({ 
+    color: 0x888888,
+    side: THREE.DoubleSide
+  });
+  const ceiling = new THREE.Mesh(ceilingGeometry, ceilingMaterial);
+  ceiling.position.set(COURT_WIDTH / 2, COURT_HEIGHT + 10, 0);
 
   // Group all court elements
   const court = new THREE.Group();
   court.add(ground);
   court.add(leftWall);
   court.add(rightWall);
+  court.add(ceiling);
   
   return court;
 }
@@ -137,20 +177,67 @@ function animate() {
   requestAnimationFrame(animate);
   
   if (gameActive) {
-    // Interpolate toward network state for smooth movement
     const lerpFactor = 0.2;
-    player1.position.x += (networkState.player1.x - player1.position.x) * lerpFactor;
-    player1.position.y += (networkState.player1.y - player1.position.y) * lerpFactor;
-    
-    player2.position.x += (networkState.player2.x - player2.position.x) * lerpFactor;
-    player2.position.y += (networkState.player2.y - player2.position.y) * lerpFactor;
-    
-    ball.position.x += (networkState.ball.x - ball.position.x) * lerpFactor;
-    ball.position.y += (networkState.ball.y - ball.position.y) * lerpFactor;
+    const targetP1X = networkState.p1.x + PLAYER_WIDTH / 2;
+    const targetP1Y = networkState.p1.y;
+    const targetP2X = networkState.p2.x + PLAYER_WIDTH / 2;
+    const targetP2Y = networkState.p2.y;
+    const targetBallX = networkState.ball.x;
+    const targetBallY = networkState.ball.y;
+
+    player1.position.x += (targetP1X - player1.position.x) * lerpFactor;
+    player1.position.y += (targetP1Y - player1.position.y) * lerpFactor;
+    player2.position.x += (targetP2X - player2.position.x) * lerpFactor;
+    player2.position.y += (targetP2Y - player2.position.y) * lerpFactor;
+
+    if (networkState.serving) {
+      ball.position.x = targetBallX;
+      ball.position.y = targetBallY;
+    } else {
+      ball.position.x += (targetBallX - ball.position.x) * lerpFactor;
+      ball.position.y += (targetBallY - ball.position.y) * lerpFactor;
+    }
+    ball.visible = networkState.ball.visible;
   }
   
   renderer.render(scene, camera);
 }
+
+// Start the animation loop
+animate();
+
+// Make sure the menu screen doesn't hide the game
+menuScreen.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+waitingScreen.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+gameOverScreen.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+
+// Debug logging
+console.log('Game objects created:', {
+  player1: player1.position,
+  player2: player2.position,
+  ball: ball.position,
+  net: net.position,
+  court: court.position
+});
+
+// Force initial render
+console.log('Rendering scene...');
+renderer.render(scene, camera);
+
+// Check if canvas is properly sized
+console.log('Canvas size:', {
+  width: canvas.width,
+  height: canvas.height,
+  styleWidth: canvas.style.width,
+  styleHeight: canvas.style.height
+});
+
+// Check if game container exists and is properly sized
+console.log('Game container:', {
+  exists: !!gameContainer,
+  width: gameContainer.offsetWidth,
+  height: gameContainer.offsetHeight
+});
 
 // Socket event handlers
 socket.on('connect', () => {
@@ -174,12 +261,14 @@ socket.on('matchFound', (data) => {
 
 socket.on('gameStateUpdate', (state) => {
   // Update network state for interpolation
-  networkState.player1.x = state.p1.x;
-  networkState.player1.y = state.p1.y;
-  networkState.player2.x = state.p2.x;
-  networkState.player2.y = state.p2.y;
+  networkState.p1.x = state.p1.x;
+  networkState.p1.y = state.p1.y;
+  networkState.p2.x = state.p2.x;
+  networkState.p2.y = state.p2.y;
   networkState.ball.x = state.ball.x;
   networkState.ball.y = state.ball.y;
+  networkState.ball.visible = state.ball.visible;
+  networkState.serving = state.serving;
 });
 
 socket.on('scoreUpdate', (data) => {
@@ -209,18 +298,22 @@ socket.on('gameOver', (data) => {
 socket.on('opponentDisconnect', () => {
   gameActive = false;
   
-  // Show game over screen with disconnect message
-  gameOverScreen.classList.remove('hidden');
+  // Hide all screens and show main menu
+  waitingScreen.classList.add('hidden');
+  gameOverScreen.classList.add('hidden');
   scoreDisplay.classList.add('hidden');
+  menuScreen.classList.remove('hidden');
   
-  winnerTextElem.textContent = 'Opponent disconnected';
-  finalScoreElem.textContent = `Score: ${score[0]} - ${score[1]}`;
+  // Reset game state
+  score = [0, 0];
+  playerNum = 0;
+  sessionId = null;
 });
 
 // Input handlers
 function handleKeyDown(e) {
   if (!gameActive) return;
-  
+  console.log(`Key down: ${e.key}`);
   switch (e.key) {
     case 'ArrowLeft':
       if (!keyState.left) {
@@ -244,7 +337,7 @@ function handleKeyDown(e) {
 
 function handleKeyUp(e) {
   if (!gameActive) return;
-  
+  console.log(`Key up: ${e.key}`);
   switch (e.key) {
     case 'ArrowLeft':
       keyState.left = false;
