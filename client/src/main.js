@@ -16,12 +16,21 @@ const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
 console.log('Connecting to server at:', SERVER_URL);
 const socket = io(SERVER_URL, { 
   reconnectionDelayMax: 10000,
-  reconnectionAttempts: 10
+  reconnectionAttempts: 10,
+  transports: ['websocket', 'polling'], // Try WebSocket first, fall back to polling
+  timeout: 10000 // Longer timeout
 });
 
 // Debug socket connection
 socket.on('connect', () => {
   console.log('Connected to server with socket ID:', socket.id);
+  
+  // If user was waiting for a match, re-emit findMatch
+  if (document.getElementById('waiting-screen').classList.contains('visible') || 
+      !document.getElementById('waiting-screen').classList.contains('hidden')) {
+    console.log('Reconnected while waiting for match, re-emitting findMatch');
+    socket.emit('findMatch');
+  }
 });
 
 socket.on('connect_error', (error) => {
@@ -30,6 +39,14 @@ socket.on('connect_error', (error) => {
 
 socket.on('disconnect', (reason) => {
   console.log('Disconnected from server:', reason);
+});
+
+socket.on('reconnect', (attemptNumber) => {
+  console.log(`Reconnected to server after ${attemptNumber} attempts`);
+});
+
+socket.on('reconnect_attempt', (attemptNumber) => {
+  console.log(`Reconnection attempt #${attemptNumber}`);
 });
 
 // Game state
@@ -259,7 +276,7 @@ console.log('Game container:', {
 
 // Socket event handlers
 socket.on('matchFound', (data) => {
-  console.log('Match found', data);
+  console.log('Match found with data:', data);
   sessionId = data.sessionId;
   playerNum = data.playerNum;
   gameActive = true;
@@ -271,9 +288,25 @@ socket.on('matchFound', (data) => {
   // Reset scores
   score = [0, 0];
   updateScoreDisplay();
+  
+  console.log('Game is now active, player number:', playerNum);
 });
 
 socket.on('gameStateUpdate', (state) => {
+  // Log state updates occasionally (every ~5 seconds) to avoid console spam
+  if (Math.random() < 0.02) {
+    console.log('Game state update:', {
+      p1: { x: state.p1.x.toFixed(2), y: state.p1.y.toFixed(2) },
+      p2: { x: state.p2.x.toFixed(2), y: state.p2.y.toFixed(2) },
+      ball: { 
+        x: state.ball.x.toFixed(2), 
+        y: state.ball.y.toFixed(2),
+        visible: state.ball.visible
+      },
+      serving: state.serving
+    });
+  }
+  
   // Update network state for interpolation
   networkState.p1.x = state.p1.x;
   networkState.p1.y = state.p1.y;
@@ -382,6 +415,7 @@ function updateScoreDisplay() {
 
 // Event listeners
 findMatchBtn.addEventListener('click', () => {
+  console.log('Find Match button clicked, emitting findMatch event');
   menuScreen.classList.add('hidden');
   waitingScreen.classList.remove('hidden');
   socket.emit('findMatch');

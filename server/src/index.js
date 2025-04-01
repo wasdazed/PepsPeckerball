@@ -360,12 +360,47 @@ class GameSession {
   }
 
   broadcastGameState() {
-    io.to(this.id).emit('gameStateUpdate', {
-      p1: { x: this.player1.x, y: this.player1.y },
-      p2: { x: this.player2.x, y: this.player2.y },
-      ball: { x: this.ball.x, y: this.ball.y, visible: true },
-      serving: this.servingState.isServing
-    });
+    // Debug - every 50 frames (about 1.5 seconds)
+    if (Math.random() < 0.02) {
+      console.log(`Broadcasting state to room: ${this.id}, Players: ${this.player1.id}, ${this.player2.id}`);
+      console.log(`Active session details:`, {
+        serving: this.servingState.isServing,
+        p1Pos: { x: this.player1.x, y: this.player1.y },
+        p2Pos: { x: this.player2.x, y: this.player2.y },
+        ballPos: { x: this.ball.x, y: this.ball.y }
+      });
+    }
+    
+    // Try emitting directly to each player as a fallback
+    try {
+      io.to(this.id).emit('gameStateUpdate', {
+        p1: { x: this.player1.x, y: this.player1.y },
+        p2: { x: this.player2.x, y: this.player2.y },
+        ball: { x: this.ball.x, y: this.ball.y, visible: true },
+        serving: this.servingState.isServing
+      });
+    } catch (error) {
+      console.error(`Error broadcasting to room ${this.id}:`, error);
+      
+      // Fallback: emit directly to each player
+      try {
+        io.to(this.player1.id).emit('gameStateUpdate', {
+          p1: { x: this.player1.x, y: this.player1.y },
+          p2: { x: this.player2.x, y: this.player2.y },
+          ball: { x: this.ball.x, y: this.ball.y, visible: true },
+          serving: this.servingState.isServing
+        });
+        
+        io.to(this.player2.id).emit('gameStateUpdate', {
+          p1: { x: this.player1.x, y: this.player1.y },
+          p2: { x: this.player2.x, y: this.player2.y },
+          ball: { x: this.ball.x, y: this.ball.y, visible: true },
+          serving: this.servingState.isServing
+        });
+      } catch (fallbackError) {
+        console.error(`Fallback emission also failed:`, fallbackError);
+      }
+    }
   }
 
   broadcastScore() {
@@ -395,16 +430,17 @@ class GameSession {
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {
-  console.log(`Player connected: ${socket.id}`);
+  console.log(`Player connected: ${socket.id}, Total clients: ${Object.keys(io.sockets.sockets).length}`);
 
   // Handle client disconnection
   socket.on('disconnect', () => {
-    console.log(`Player disconnected: ${socket.id}`);
+    console.log(`Player disconnected: ${socket.id}, Remaining clients: ${Object.keys(io.sockets.sockets).length - 1}`);
     
     // Remove from waiting queue if they were waiting
     const waitingIndex = waitingPlayers.indexOf(socket.id);
     if (waitingIndex !== -1) {
       waitingPlayers.splice(waitingIndex, 1);
+      console.log(`Removed ${socket.id} from waiting queue. New queue:`, waitingPlayers);
     }
     
     // Check if they were in an active game session
@@ -412,11 +448,13 @@ io.on('connection', (socket) => {
       if (session.player1.id === socket.id || session.player2.id === socket.id) {
         // Notify the other player
         const otherPlayerId = session.player1.id === socket.id ? session.player2.id : session.player1.id;
+        console.log(`Player in active session disconnected. Notifying other player: ${otherPlayerId}`);
         io.to(otherPlayerId).emit('opponentDisconnect');
         
         // Clean up the session
         session.cleanup();
         activeSessions.delete(sessionId);
+        console.log(`Session ${sessionId} cleaned up due to player disconnect`);
         break;
       }
     }
@@ -424,22 +462,40 @@ io.on('connection', (socket) => {
 
   // Handle find match request
   socket.on('findMatch', () => {
+    console.log(`Player ${socket.id} looking for match. Current queue:`, waitingPlayers);
+    
     // Add player to waiting queue
     waitingPlayers.push(socket.id);
-    console.log(`Player ${socket.id} looking for match. Queue size: ${waitingPlayers.length}`);
+    console.log(`Player ${socket.id} added to queue. Queue size: ${waitingPlayers.length}`);
     
     // Check if we can create a match
     if (waitingPlayers.length >= 2) {
       const player1Id = waitingPlayers.shift();
       const player2Id = waitingPlayers.shift();
       
+      console.log(`Creating match between ${player1Id} and ${player2Id}`);
+      
       // Create a new game session
       const session = new GameSession(player1Id, player2Id);
       activeSessions.set(session.id, session);
       
-      // Add both players to the session room
-      socket.join(session.id);
-      io.sockets.sockets.get(player1Id)?.join(session.id);
+      // Make sure both players join the session room
+      const player1Socket = io.sockets.sockets.get(player1Id);
+      const player2Socket = io.sockets.sockets.get(player2Id);
+      
+      if (player1Socket) {
+        player1Socket.join(session.id);
+        console.log(`Player 1 (${player1Id}) joined room ${session.id}`);
+      } else {
+        console.error(`Error: Socket for player 1 (${player1Id}) not found!`);
+      }
+      
+      if (player2Socket) {
+        player2Socket.join(session.id);
+        console.log(`Player 2 (${player2Id}) joined room ${session.id}`);
+      } else {
+        console.error(`Error: Socket for player 2 (${player2Id}) not found!`);
+      }
       
       // Notify both players of the match
       io.to(player1Id).emit('matchFound', { sessionId: session.id, playerNum: 1 });
@@ -452,11 +508,16 @@ io.on('connection', (socket) => {
   // Handle player input
   socket.on('playerInput', (inputData) => {
     // Find the game session for this player
+    let sessionFound = false;
     for (const session of activeSessions.values()) {
       if (session.player1.id === socket.id || session.player2.id === socket.id) {
         session.handlePlayerInput(socket.id, inputData);
+        sessionFound = true;
         break;
       }
+    }
+    if (!sessionFound) {
+      console.warn(`Received input from ${socket.id} but no active session found for this player`);
     }
   });
 });
