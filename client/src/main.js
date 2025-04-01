@@ -12,7 +12,10 @@ const NET_HEIGHT = 120;
 const GROUND_HEIGHT = 20;
 
 // Socket.IO connection
-const socket = io('http://localhost:3001');
+const socket = io(window.location.origin, {
+  path: '/api/socket.io',
+  transports: ['websocket']
+});
 
 // Game state
 let playerNum = 0;
