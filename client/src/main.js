@@ -3,12 +3,12 @@ import * as THREE from 'three';
 
 // Game constants (match server)
 const COURT_WIDTH = 800;
-const COURT_HEIGHT = 400;
-const PLAYER_WIDTH = 40;
-const PLAYER_HEIGHT = 40;
-const BALL_RADIUS = 20;
+const COURT_HEIGHT = 480;
+const PLAYER_WIDTH = 65;
+const PLAYER_HEIGHT = 65;
+const BALL_RADIUS = 30;
 const NET_WIDTH = 10;
-const NET_HEIGHT = 120;
+const NET_HEIGHT = 225;
 const GROUND_HEIGHT = 20;
 
 // Socket.IO connection
@@ -169,7 +169,7 @@ function createCourt() {
     side: THREE.DoubleSide
   });
   const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-  ground.position.set(COURT_WIDTH / 2, GROUND_HEIGHT/2, 0);  // Adjusted to align with ground collision
+  ground.position.set(COURT_WIDTH / 2, COURT_HEIGHT, 0);  // Adjusted to align with ground collision
 
   // Create left wall
   const leftWallGeometry = new THREE.BoxGeometry(20, COURT_HEIGHT, 20);

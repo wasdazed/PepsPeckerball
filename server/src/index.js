@@ -8,17 +8,16 @@ const fs = require('fs');
 // Game constants
 const TICK_RATE = 30; // Updates per second
 const COURT_WIDTH = 800;
-const COURT_HEIGHT = 400;
-const PLAYER_WIDTH = 40;
-const PLAYER_HEIGHT = 40;
-const BALL_RADIUS = 20;
+const COURT_HEIGHT = 480;
+const PLAYER_WIDTH = 65;
+const PLAYER_HEIGHT = 65;
+const BALL_RADIUS = 30;
 const NET_WIDTH = 10;
-const NET_HEIGHT = 120;
-const GRAVITY = 1.0;         // Set to 1.0 for both ball and players
+const NET_HEIGHT = 225;
+const GRAVITY = 0.7;         // Reduced gravity for better gameplay
 const JUMP_VELOCITY = -12;   // Back to original value
 const MOVE_SPEED = 10;       // Match ball's horizontal velocity
 const MAX_SCORE = 11;
-const GROUND_HEIGHT = 400;
 const SERVE_DELAY = 1000; // 1 second delay
 
 // Setup Express
@@ -105,7 +104,7 @@ class GameSession {
     this.player1 = {
       id: player1Id,
       x: COURT_WIDTH / 4 - PLAYER_WIDTH / 2,
-      y: GROUND_HEIGHT - PLAYER_HEIGHT,
+      y: COURT_HEIGHT - PLAYER_HEIGHT,
       width: PLAYER_WIDTH,
       height: PLAYER_HEIGHT,
       velocity: { x: 0, y: 0 },
@@ -115,7 +114,7 @@ class GameSession {
     this.player2 = {
       id: player2Id,
       x: COURT_WIDTH * 3/4 - PLAYER_WIDTH / 2,
-      y: GROUND_HEIGHT - PLAYER_HEIGHT,
+      y: COURT_HEIGHT - PLAYER_HEIGHT,
       width: PLAYER_WIDTH,
       height: PLAYER_HEIGHT,
       velocity: { x: 0, y: 0 },
@@ -124,13 +123,13 @@ class GameSession {
     };
     this.ball = {
       x: COURT_WIDTH / 4, // Start on left side for player 1
-      y: GROUND_HEIGHT - (PLAYER_HEIGHT * 2 + BALL_RADIUS),
+      y: COURT_HEIGHT - (PLAYER_HEIGHT * 2 + BALL_RADIUS),
       radius: BALL_RADIUS,
       velocity: { x: 0, y: 0 }
     };
     this.net = {
       x: COURT_WIDTH / 2 - NET_WIDTH / 2,
-      y: GROUND_HEIGHT - NET_HEIGHT,
+      y: COURT_HEIGHT - NET_HEIGHT,
       width: NET_WIDTH,
       height: NET_HEIGHT
     };
@@ -167,7 +166,7 @@ class GameSession {
       } else {
         this.ball.x = COURT_WIDTH * 3/4;
       }
-      this.ball.y = GROUND_HEIGHT - (PLAYER_HEIGHT * 2 + BALL_RADIUS);
+      this.ball.y = COURT_HEIGHT - (PLAYER_HEIGHT * 2 + BALL_RADIUS);
       this.ball.velocity = { x: 0, y: 0 };
       this.servingState.serveTimer -= dt * 16.67;
       // Log for debugging
@@ -269,7 +268,7 @@ class GameSession {
     }
 
     // Apply jump if on ground and jump input is active
-    if (player.inputs.jump && player.y >= GROUND_HEIGHT - player.height) {
+    if (player.inputs.jump && player.y >= COURT_HEIGHT - player.height) {
       player.velocity.y = JUMP_VELOCITY;
       player.inputs.jump = false; // Consume the jump input
     }
@@ -283,7 +282,7 @@ class GameSession {
 
     // Constrain to court boundaries
     player.x = Math.max(minX, Math.min(maxX, player.x));
-    player.y = Math.min(GROUND_HEIGHT - player.height, player.y);
+    player.y = Math.min(COURT_HEIGHT - player.height, player.y);
   }
 
   checkCollision(x1, y1, w1, h1, x2, y2, w2, h2) {
@@ -292,7 +291,7 @@ class GameSession {
 
   checkScoring() {
     // Check if ball hit the ground
-    if (this.ball.y + this.ball.radius >= GROUND_HEIGHT) {
+    if (this.ball.y + this.ball.radius >= COURT_HEIGHT) {
       // Determine which side the ball landed on
       if (this.ball.x < COURT_WIDTH / 2) {
         this.player2.score++;
@@ -318,7 +317,7 @@ class GameSession {
     } else {
       this.ball.x = COURT_WIDTH * 3/4; // Right side
     }
-    this.ball.y = GROUND_HEIGHT - (PLAYER_HEIGHT * 2 + BALL_RADIUS);
+    this.ball.y = COURT_HEIGHT - (PLAYER_HEIGHT * 2 + BALL_RADIUS);
     this.ball.velocity = { x: 0, y: 0 };
     this.servingState = {
       isServing: true,
