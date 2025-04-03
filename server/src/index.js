@@ -14,11 +14,12 @@ const PLAYER_HEIGHT = 40;
 const BALL_RADIUS = 20;
 const NET_WIDTH = 10;
 const NET_HEIGHT = 120;
-const GRAVITY = 1.5;         // Increased from 0.5 for faster falling
-const JUMP_VELOCITY = -20;   // Increased from -12 for higher jumps
-const MOVE_SPEED = 15;       // Increased from 5 for faster lateral movement
+const GRAVITY = 1.0;         // Set to 1.0 for both ball and players
+const JUMP_VELOCITY = -12;   // Back to original value
+const MOVE_SPEED = 10;       // Match ball's horizontal velocity
 const MAX_SCORE = 11;
 const GROUND_HEIGHT = 400;
+const SERVE_DELAY = 1000; // 1 second delay
 
 // Setup Express
 const app = express();
@@ -103,8 +104,8 @@ class GameSession {
     this.id = uuidv4();
     this.player1 = {
       id: player1Id,
-      x: 50,
-      y: COURT_HEIGHT - PLAYER_HEIGHT,
+      x: COURT_WIDTH / 4 - PLAYER_WIDTH / 2,
+      y: GROUND_HEIGHT - PLAYER_HEIGHT,
       width: PLAYER_WIDTH,
       height: PLAYER_HEIGHT,
       velocity: { x: 0, y: 0 },
@@ -113,8 +114,8 @@ class GameSession {
     };
     this.player2 = {
       id: player2Id,
-      x: COURT_WIDTH - PLAYER_WIDTH - 50,
-      y: COURT_HEIGHT - PLAYER_HEIGHT,
+      x: COURT_WIDTH * 3/4 - PLAYER_WIDTH / 2,
+      y: GROUND_HEIGHT - PLAYER_HEIGHT,
       width: PLAYER_WIDTH,
       height: PLAYER_HEIGHT,
       velocity: { x: 0, y: 0 },
@@ -122,28 +123,25 @@ class GameSession {
       inputs: { left: false, right: false, jump: false }
     };
     this.ball = {
-      x: 50,
-      y: COURT_HEIGHT - PLAYER_HEIGHT - PLAYER_HEIGHT - PLAYER_HEIGHT, // 40 units above player's top
+      x: COURT_WIDTH / 4, // Start on left side for player 1
+      y: GROUND_HEIGHT - (PLAYER_HEIGHT * 2 + BALL_RADIUS),
       radius: BALL_RADIUS,
       velocity: { x: 0, y: 0 }
     };
     this.net = {
       x: COURT_WIDTH / 2 - NET_WIDTH / 2,
-      y: COURT_HEIGHT - NET_HEIGHT,
+      y: GROUND_HEIGHT - NET_HEIGHT,
       width: NET_WIDTH,
       height: NET_HEIGHT
     };
     this.servingState = {
       isServing: true,
       servingPlayer: 1,
-      serveTimer: 0,
-      serveDelay: 2000 // 2 seconds delay
+      serveTimer: SERVE_DELAY // Start with 1s delay
     };
     this.server = 1;
     this.isGameActive = true;
     this.lastUpdateTime = Date.now();
-    
-    // Start the game loop for this session
     this.startGameLoop();
   }
 
@@ -157,74 +155,56 @@ class GameSession {
     const now = Date.now();
     const dt = Math.min(33, now - this.lastUpdateTime) / 16.67;
     this.lastUpdateTime = now;
-
     if (!this.isGameActive) return;
 
-    // Always update players, regardless of serving state
     this.updatePlayer(this.player1, dt, 0, COURT_WIDTH / 2 - PLAYER_WIDTH);
     this.updatePlayer(this.player2, dt, COURT_WIDTH / 2, COURT_WIDTH - PLAYER_WIDTH);
 
     if (this.servingState.isServing) {
-      // Keep ball stationary at its initial position (set in resetBall)
-      // Do NOT update ball.x or ball.y here—let resetBall handle it once
-      this.ball.velocity = { x: 0, y: 0 }; // Ensure no residual velocity
-
-      const servingPlayer = this.servingState.servingPlayer === 1 ? this.player1 : this.player2;
-
-      // Check for collision to start the serve
-      if (this.checkCollision(
-        this.ball.x - this.ball.radius, this.ball.y - this.ball.radius,
-        this.ball.radius * 2, this.ball.radius * 2,
-        servingPlayer.x, servingPlayer.y,
-        servingPlayer.width, servingPlayer.height
-      )) {
-        // Only allow hitting the ball when the player is jumping
-        if (servingPlayer.velocity.y < 0) {
-          this.servingState.isServing = false;
-          this.ball.velocity.x = (this.servingState.servingPlayer === 1 ? 1 : -1) * 5;
-          this.ball.velocity.y = -8;
-        }
+      // Lock ball to serving player's side
+      if (this.servingState.servingPlayer === 1) {
+        this.ball.x = COURT_WIDTH / 4;
+      } else {
+        this.ball.x = COURT_WIDTH * 3/4;
       }
+      this.ball.y = GROUND_HEIGHT - (PLAYER_HEIGHT * 2 + BALL_RADIUS);
+      this.ball.velocity = { x: 0, y: 0 };
+      this.servingState.serveTimer -= dt * 16.67;
+      // Log for debugging
+      console.log(`Serve timer: ${this.servingState.serveTimer}`);
     } else {
-      // Normal ball physics when not serving
-      this.updateBall(dt);
+      this.updateBall(dt); // Normal physics
     }
+
+    // Always check player-ball collisions
+    this.checkPlayerBallCollisions();
 
     this.checkScoring();
     this.broadcastGameState();
   }
 
-  updatePlayer(player, dt, minX, maxX) {
-    // Apply horizontal movement based on inputs
-    if (player.inputs.left) {
-      player.velocity.x = -MOVE_SPEED;
-    } else if (player.inputs.right) {
-      player.velocity.x = MOVE_SPEED;
-    } else {
-      player.velocity.x = 0;
+  checkPlayerBallCollisions() {
+    if (this.checkCollision(
+      this.ball.x - this.ball.radius, this.ball.y - this.ball.radius,
+      this.ball.radius * 2, this.ball.radius * 2,
+      this.player1.x, this.player1.y, this.player1.width, this.player1.height
+    )) {
+      console.log('Collision detected with player1');
+      this.handlePlayerBallCollision(this.player1);
     }
-
-    // Apply jump if on ground and jump input is active
-    if (player.inputs.jump && player.y >= COURT_HEIGHT - player.height) {
-      player.velocity.y = JUMP_VELOCITY;
-      player.inputs.jump = false; // Consume the jump input
+    if (this.checkCollision(
+      this.ball.x - this.ball.radius, this.ball.y - this.ball.radius,
+      this.ball.radius * 2, this.ball.radius * 2,
+      this.player2.x, this.player2.y, this.player2.width, this.player2.height
+    )) {
+      console.log('Collision detected with player2');
+      this.handlePlayerBallCollision(this.player2);
     }
-
-    // Apply gravity
-    player.velocity.y += GRAVITY * dt;
-
-    // Update position
-    player.x += player.velocity.x * dt;
-    player.y += player.velocity.y * dt;
-
-    // Constrain to court boundaries
-    player.x = Math.max(minX, Math.min(maxX, player.x));
-    player.y = Math.min(COURT_HEIGHT - player.height, player.y);
   }
 
   updateBall(dt) {
     // Apply gravity to the ball
-    this.ball.velocity.y += GRAVITY * dt * 0.7; // Reduced gravity for ball
+    this.ball.velocity.y += GRAVITY * dt;
     
     // Update position
     this.ball.x += this.ball.velocity.x * dt;
@@ -247,7 +227,7 @@ class GameSession {
 
     // Check for collision with net
     if (this.checkCollision(
-      this.ball.x - this.ball.radius, this.ball.y - this.ball.radius, 
+      this.ball.x - this.ball.radius, this.ball.y - this.ball.radius,
       this.ball.radius * 2, this.ball.radius * 2,
       this.net.x, this.net.y, this.net.width, this.net.height
     )) {
@@ -258,50 +238,52 @@ class GameSession {
       }
       this.ball.velocity.x = -this.ball.velocity.x * 0.9;
     }
-
-    // Check for collision with players
-    if (this.checkCollision(
-      this.ball.x - this.ball.radius, this.ball.y - this.ball.radius, 
-      this.ball.radius * 2, this.ball.radius * 2,
-      this.player1.x, this.player1.y, this.player1.width, this.player1.height
-    )) {
-      this.handlePlayerBallCollision(this.player1);
-    }
-
-    if (this.checkCollision(
-      this.ball.x - this.ball.radius, this.ball.y - this.ball.radius, 
-      this.ball.radius * 2, this.ball.radius * 2,
-      this.player2.x, this.player2.y, this.player2.width, this.player2.height
-    )) {
-      this.handlePlayerBallCollision(this.player2);
-    }
   }
 
   handlePlayerBallCollision(player) {
-    // During serving state, only the serving player can hit the ball
-    if (this.servingState.isServing) {
-      if ((this.servingState.servingPlayer === 1 && player === this.player1) ||
-          (this.servingState.servingPlayer === 2 && player === this.player2)) {
-        // Only allow hitting the ball when the player is jumping
-        if (player.velocity.y < 0) {
-          this.servingState.isServing = false;
-          this.ball.velocity.x = (this.servingState.servingPlayer === 1 ? 1 : -1) * 5;
-          this.ball.velocity.y = -8;
-        }
-        return;
-      } else {
-        return;
-      }
+    if (this.servingState.isServing && this.servingState.serveTimer > 0) {
+      console.log('Hit blocked: Serve timer still active');
+      return; // Can't hit during delay
+    }
+    this.servingState.isServing = false; // Ball is now in play
+    const hitPoint = (this.ball.x - (player.x + player.width / 2)) / (player.width / 2);
+    // Set initial serve direction if this is the first hit
+    if (this.ball.velocity.x === 0) {
+      this.ball.velocity.x = (this.servingState.servingPlayer === 1 ? 1 : -1) * Math.abs(hitPoint * 10);
+    } else {
+      this.ball.velocity.x = hitPoint * 10;
+    }
+    this.ball.velocity.y = -10 - Math.abs(hitPoint * 4);
+    this.ball.y = player.y - this.ball.radius;
+    console.log('Ball hit by player, velocity:', this.ball.velocity);
+  }
+
+  updatePlayer(player, dt, minX, maxX) {
+    // Apply horizontal movement based on inputs
+    if (player.inputs.left) {
+      player.velocity.x = -MOVE_SPEED;
+    } else if (player.inputs.right) {
+      player.velocity.x = MOVE_SPEED;
+    } else {
+      player.velocity.x = 0;
     }
 
-    // Regular collision handling during gameplay
-    const hitPoint = (this.ball.x - (player.x + player.width / 2)) / (player.width / 2);
-    this.ball.velocity.x = hitPoint * 10;
-    this.ball.velocity.y = -10 - Math.abs(hitPoint * 4);
-    
-    if (!this.servingState.isServing) {
-      this.ball.y = player.y - this.ball.radius;
+    // Apply jump if on ground and jump input is active
+    if (player.inputs.jump && player.y >= GROUND_HEIGHT - player.height) {
+      player.velocity.y = JUMP_VELOCITY;
+      player.inputs.jump = false; // Consume the jump input
     }
+
+    // Apply gravity
+    player.velocity.y += GRAVITY * dt;
+
+    // Update position
+    player.x += player.velocity.x * dt;
+    player.y += player.velocity.y * dt;
+
+    // Constrain to court boundaries
+    player.x = Math.max(minX, Math.min(maxX, player.x));
+    player.y = Math.min(GROUND_HEIGHT - player.height, player.y);
   }
 
   checkCollision(x1, y1, w1, h1, x2, y2, w2, h2) {
@@ -310,7 +292,7 @@ class GameSession {
 
   checkScoring() {
     // Check if ball hit the ground
-    if (this.ball.y + this.ball.radius >= COURT_HEIGHT) {
+    if (this.ball.y + this.ball.radius >= GROUND_HEIGHT) {
       // Determine which side the ball landed on
       if (this.ball.x < COURT_WIDTH / 2) {
         this.player2.score++;
@@ -331,16 +313,17 @@ class GameSession {
   }
 
   resetBall() {
-    const servingPlayer = this.server === 1 ? this.player1 : this.player2;
-    this.ball.x = servingPlayer.x + servingPlayer.width / 2;
-    this.ball.y = COURT_HEIGHT - PLAYER_HEIGHT - PLAYER_HEIGHT - PLAYER_HEIGHT; // 60 units above player's top
+    if (this.servingState.servingPlayer === 1) {
+      this.ball.x = COURT_WIDTH / 4; // Left side
+    } else {
+      this.ball.x = COURT_WIDTH * 3/4; // Right side
+    }
+    this.ball.y = GROUND_HEIGHT - (PLAYER_HEIGHT * 2 + BALL_RADIUS);
     this.ball.velocity = { x: 0, y: 0 };
-    
     this.servingState = {
       isServing: true,
       servingPlayer: this.server,
-      serveTimer: 0,
-      serveDelay: 2000 // 2 seconds delay
+      serveTimer: SERVE_DELAY // 1s delay
     };
   }
 

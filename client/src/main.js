@@ -13,7 +13,7 @@ const GROUND_HEIGHT = 20;
 
 // Socket.IO connection
 console.log('Setting up Socket.IO connection...');
-const socket = io(); // Relative URL - connects to same domain
+const socket = io('http://localhost:3001'); // Explicitly connect to local server
 socket.on('connect', () => {
   console.log('Connected to server with socket ID:', socket.id);
   console.log('Transport used:', socket.io.engine.transport.name);
@@ -97,9 +97,9 @@ const net = createNet();
 const court = createCourt();
 
 // Set initial positions
-player1.position.set(50 + PLAYER_WIDTH / 2, COURT_HEIGHT - PLAYER_HEIGHT, 5);
-player2.position.set(COURT_WIDTH - PLAYER_WIDTH - 50 + PLAYER_WIDTH / 2, COURT_HEIGHT - PLAYER_HEIGHT, 5);
-ball.position.set(50 + PLAYER_WIDTH / 2, COURT_HEIGHT - (2 * PLAYER_HEIGHT), 6);
+player1.position.set(COURT_WIDTH / 4, COURT_HEIGHT - PLAYER_HEIGHT, 5);
+player2.position.set(COURT_WIDTH * 3/4, COURT_HEIGHT - PLAYER_HEIGHT, 5);
+ball.position.set(COURT_WIDTH / 4, COURT_HEIGHT - PLAYER_HEIGHT - PLAYER_HEIGHT - BALL_RADIUS, 6);
 net.position.set(COURT_WIDTH / 2, COURT_HEIGHT - NET_HEIGHT / 2, 5);
 
 // Add objects to the scene
@@ -211,8 +211,8 @@ function animate() {
   if (gameActive) {
     const lerpFactor = 0.2;
     
-    // Player positions - apply faster movement
-    const speedFactor = 1.0; // Adjust if needed for smoothness
+    // Player positions - moderate movement speed
+    const speedFactor = 0.8; // Slightly reduced for smoother movement
     const targetP1X = networkState.p1.x + PLAYER_WIDTH / 2;
     const targetP1Y = networkState.p1.y;
     const targetP2X = networkState.p2.x + PLAYER_WIDTH / 2;
@@ -220,18 +220,18 @@ function animate() {
     const targetBallX = networkState.ball.x;
     const targetBallY = networkState.ball.y;
 
-    // Use faster lerp for snappier movement (0.5 instead of 0.2)
-    player1.position.x += (targetP1X - player1.position.x) * 0.5 * speedFactor;
-    player1.position.y += (targetP1Y - player1.position.y) * 0.5 * speedFactor;
-    player2.position.x += (targetP2X - player2.position.x) * 0.5 * speedFactor;
-    player2.position.y += (targetP2Y - player2.position.y) * 0.5 * speedFactor;
+    // Use moderate lerp for smooth movement
+    player1.position.x += (targetP1X - player1.position.x) * 0.3 * speedFactor;
+    player1.position.y += (targetP1Y - player1.position.y) * 0.3 * speedFactor;
+    player2.position.x += (targetP2X - player2.position.x) * 0.3 * speedFactor;
+    player2.position.y += (targetP2Y - player2.position.y) * 0.3 * speedFactor;
 
     if (networkState.serving) {
       ball.position.x = targetBallX;
       ball.position.y = targetBallY;
     } else {
-      ball.position.x += (targetBallX - ball.position.x) * 0.5 * speedFactor;
-      ball.position.y += (targetBallY - ball.position.y) * 0.5 * speedFactor;
+      ball.position.x += (targetBallX - ball.position.x) * 0.3 * speedFactor;
+      ball.position.y += (targetBallY - ball.position.y) * 0.3 * speedFactor;
     }
     ball.visible = networkState.ball.visible;
   }
