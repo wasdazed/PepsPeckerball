@@ -9,7 +9,7 @@ const PLAYER_HEIGHT = 65;
 const BALL_RADIUS = 30;
 const NET_WIDTH = 10;
 const NET_HEIGHT = 225;
-const GROUND_HEIGHT = 20;
+const GROUND_HEIGHT = 15;
 
 // Socket.IO connection
 console.log('Setting up Socket.IO connection...');
@@ -169,7 +169,7 @@ function createCourt() {
     side: THREE.DoubleSide
   });
   const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-  ground.position.set(COURT_WIDTH / 2, COURT_HEIGHT, 0);  // Adjusted to align with ground collision
+  ground.position.set(COURT_WIDTH / 2, COURT_HEIGHT - GROUND_HEIGHT *2, 0);  // Adjusted to align with ground collision
 
   // Create left wall
   const leftWallGeometry = new THREE.BoxGeometry(20, COURT_HEIGHT, 20);
@@ -192,7 +192,7 @@ function createCourt() {
     side: THREE.DoubleSide
   });
   const ceiling = new THREE.Mesh(ceilingGeometry, ceilingMaterial);
-  ceiling.position.set(COURT_WIDTH / 2, COURT_HEIGHT + 10, 0);
+  ceiling.position.set(COURT_WIDTH / 2, -20, 0);
 
   // Group all court elements
   const court = new THREE.Group();
