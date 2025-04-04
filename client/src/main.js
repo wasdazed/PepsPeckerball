@@ -12,7 +12,7 @@ const NET_HEIGHT = 225;
 const GROUND_HEIGHT = 15;
 
 // Determine the server URL
-const SERVER_URL = 'https://apppepspeckerball-production.up.railway.app';
+const SERVER_URL = 'https://pepspeckerball-production.up.railway.app';
 
 // Socket.IO connection
 console.log('Setting up Socket.IO connection to:', SERVER_URL);
