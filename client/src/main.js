@@ -11,9 +11,12 @@ const NET_WIDTH = 10;
 const NET_HEIGHT = 225;
 const GROUND_HEIGHT = 15;
 
+// Determine the server URL
+const SERVER_URL = process.env.SERVER_URL || 'http://localhost:3001';
+
 // Socket.IO connection
-console.log('Setting up Socket.IO connection...');
-const socket = io('http://localhost:3001'); // Explicitly connect to local server
+console.log('Setting up Socket.IO connection to:', SERVER_URL);
+const socket = io(SERVER_URL); // Dynamically connect to the server URL
 socket.on('connect', () => {
   console.log('Connected to server with socket ID:', socket.id);
   console.log('Transport used:', socket.io.engine.transport.name);
@@ -436,4 +439,4 @@ window.addEventListener('keydown', handleKeyDown);
 window.addEventListener('keyup', handleKeyUp);
 
 // Start animation loop
-animate(); 
+animate();
