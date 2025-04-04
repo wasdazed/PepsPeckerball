@@ -12,13 +12,17 @@ const NET_HEIGHT = 225;
 const GROUND_HEIGHT = 15;
 
 // Determine the server URL
-// const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
 const SERVER_URL = 'https://apppepspeckerball-production.up.railway.app';
-
 
 // Socket.IO connection
 console.log('Setting up Socket.IO connection to:', SERVER_URL);
-const socket = io(SERVER_URL); // Dynamically connect to the server URL
+const socket = io(SERVER_URL, {
+  withCredentials: true,
+  transports: ['websocket', 'polling'],
+  reconnectionAttempts: 5,
+  reconnectionDelay: 1000
+});
+
 socket.on('connect', () => {
   console.log('Connected to server with socket ID:', socket.id);
   console.log('Transport used:', socket.io.engine.transport.name);
@@ -27,7 +31,6 @@ socket.on('connect', () => {
     console.log('Transport upgraded to:', transport.name);
   });
   
-  // If user was waiting for a match, re-emit findMatch
   if (document.getElementById('waiting-screen').classList.contains('visible') || 
       !document.getElementById('waiting-screen').classList.contains('hidden')) {
     console.log('Reconnected while waiting for match, re-emitting findMatch');
@@ -36,7 +39,11 @@ socket.on('connect', () => {
 });
 
 socket.on('connect_error', (error) => {
-  console.error('Socket connection error:', error);
+  console.error('Socket connection error:', error.message);
+  console.error('Error details:', error);
+  if (error.message === 'xhr poll error') {
+    console.log('Polling failed - likely due to server not serving /socket.io/ or CORS misconfiguration');
+  }
 });
 
 socket.on('disconnect', (reason) => {
@@ -73,41 +80,30 @@ const playAgainBtn = document.getElementById('play-again-btn');
 const canvas = document.getElementById('gameCanvas');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setSize(COURT_WIDTH, COURT_HEIGHT);
-renderer.setClearColor(0x87CEEB); // Sky blue background
+renderer.setClearColor(0x87CEEB);
 
-// Add canvas to the game container
 const gameContainer = document.getElementById('game-container');
 gameContainer.appendChild(canvas);
 
-// Create a scene
 const scene = new THREE.Scene();
 
-// Camera (orthographic for 2D-like view)
 const camera = new THREE.OrthographicCamera(
-  0,               // left
-  COURT_WIDTH,     // right
-  0,               // bottom
-  COURT_HEIGHT,    // top
-  1,               // near
-  1000             // far
+  0, COURT_WIDTH, 0, COURT_HEIGHT, 1, 1000
 );
 camera.position.z = 100;
 
-// Create game objects
 console.log('Creating game objects...');
-const player1 = createPlayer(0x7777ff); // Blue player
-const player2 = createPlayer(0xff7777); // Red player
+const player1 = createPlayer(0x7777ff);
+const player2 = createPlayer(0xff7777);
 const ball = createBall();
 const net = createNet();
 const court = createCourt();
 
-// Set initial positions
 player1.position.set(COURT_WIDTH / 4, COURT_HEIGHT - PLAYER_HEIGHT, 5);
 player2.position.set(COURT_WIDTH * 3/4, COURT_HEIGHT - PLAYER_HEIGHT, 5);
 ball.position.set(COURT_WIDTH / 4, COURT_HEIGHT - PLAYER_HEIGHT - PLAYER_HEIGHT - BALL_RADIUS, 6);
 net.position.set(COURT_WIDTH / 2, COURT_HEIGHT - NET_HEIGHT / 2, 5);
 
-// Add objects to the scene
 console.log('Adding objects to scene...');
 scene.add(court);
 scene.add(net);
@@ -115,14 +111,12 @@ scene.add(player1);
 scene.add(player2);
 scene.add(ball);
 
-// Input state
 const keyState = {
   left: false,
   right: false,
   jump: false
 };
 
-// Network state for interpolation
 const networkState = {
   p1: { x: 50, y: COURT_HEIGHT - PLAYER_HEIGHT },
   p2: { x: COURT_WIDTH - PLAYER_WIDTH - 50, y: COURT_HEIGHT - PLAYER_HEIGHT },
@@ -130,53 +124,43 @@ const networkState = {
   serving: true
 };
 
-// Functions to create game objects
 function createPlayer(color) {
   const geometry = new THREE.CircleGeometry(PLAYER_WIDTH / 2, 32);
   const material = new THREE.MeshBasicMaterial({ 
     color,
-    side: THREE.DoubleSide  // Make sure both sides are visible
+    side: THREE.DoubleSide
   });
-  const player = new THREE.Mesh(geometry, material);
-  return player;
+  return new THREE.Mesh(geometry, material);
 }
 
 function createBall() {
   const geometry = new THREE.CircleGeometry(BALL_RADIUS, 32);
   const material = new THREE.MeshBasicMaterial({ 
     color: 0xffffff,
-    side: THREE.DoubleSide  // Make sure both sides are visible
+    side: THREE.DoubleSide
   });
-  const ball = new THREE.Mesh(geometry, material);
-  return ball;
+  return new THREE.Mesh(geometry, material);
 }
 
 function createNet() {
   const geometry = new THREE.BoxGeometry(NET_WIDTH, NET_HEIGHT, 10);
   const material = new THREE.MeshBasicMaterial({ 
     color: 0xcccccc,
-    side: THREE.DoubleSide  // Make sure both sides are visible
+    side: THREE.DoubleSide
   });
   const net = new THREE.Mesh(geometry, material);
-  net.position.set(
-    COURT_WIDTH / 2, 
-    COURT_HEIGHT - NET_HEIGHT / 2, 
-    0
-  );
   return net;
 }
 
 function createCourt() {
-  // Create the ground
   const groundGeometry = new THREE.BoxGeometry(COURT_WIDTH, GROUND_HEIGHT, 20);
   const groundMaterial = new THREE.MeshBasicMaterial({ 
     color: 0x008800,
     side: THREE.DoubleSide
   });
   const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-  ground.position.set(COURT_WIDTH / 2, COURT_HEIGHT - GROUND_HEIGHT *2, 0);  // Adjusted to align with ground collision
+  ground.position.set(COURT_WIDTH / 2, COURT_HEIGHT - GROUND_HEIGHT *2, 0);
 
-  // Create left wall
   const leftWallGeometry = new THREE.BoxGeometry(20, COURT_HEIGHT, 20);
   const wallMaterial = new THREE.MeshBasicMaterial({ 
     color: 0x888888,
@@ -185,12 +169,10 @@ function createCourt() {
   const leftWall = new THREE.Mesh(leftWallGeometry, wallMaterial);
   leftWall.position.set(-10, COURT_HEIGHT / 2, 0);
 
-  // Create right wall
   const rightWallGeometry = new THREE.BoxGeometry(20, COURT_HEIGHT, 20);
   const rightWall = new THREE.Mesh(rightWallGeometry, wallMaterial);
   rightWall.position.set(COURT_WIDTH + 10, COURT_HEIGHT / 2, 0);
 
-  // Create ceiling
   const ceilingGeometry = new THREE.BoxGeometry(COURT_WIDTH, 20, 20);
   const ceilingMaterial = new THREE.MeshBasicMaterial({ 
     color: 0x888888,
@@ -199,25 +181,19 @@ function createCourt() {
   const ceiling = new THREE.Mesh(ceilingGeometry, ceilingMaterial);
   ceiling.position.set(COURT_WIDTH / 2, -20, 0);
 
-  // Group all court elements
   const court = new THREE.Group();
   court.add(ground);
   court.add(leftWall);
   court.add(rightWall);
   court.add(ceiling);
-  
   return court;
 }
 
-// Animation loop
 function animate() {
   requestAnimationFrame(animate);
-  
   if (gameActive) {
     const lerpFactor = 0.2;
-    
-    // Player positions - moderate movement speed
-    const speedFactor = 0.8; // Slightly reduced for smoother movement
+    const speedFactor = 0.8;
     const targetP1X = networkState.p1.x + PLAYER_WIDTH / 2;
     const targetP1Y = networkState.p1.y;
     const targetP2X = networkState.p2.x + PLAYER_WIDTH / 2;
@@ -225,7 +201,6 @@ function animate() {
     const targetBallX = networkState.ball.x;
     const targetBallY = networkState.ball.y;
 
-    // Use moderate lerp for smooth movement
     player1.position.x += (targetP1X - player1.position.x) * 0.3 * speedFactor;
     player1.position.y += (targetP1Y - player1.position.y) * 0.3 * speedFactor;
     player2.position.x += (targetP2X - player2.position.x) * 0.3 * speedFactor;
@@ -240,19 +215,15 @@ function animate() {
     }
     ball.visible = networkState.ball.visible;
   }
-  
   renderer.render(scene, camera);
 }
 
-// Start the animation loop
 animate();
 
-// Make sure the menu screen doesn't hide the game
 menuScreen.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
 waitingScreen.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
 gameOverScreen.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
 
-// Debug logging
 console.log('Game objects created:', {
   player1: player1.position,
   player2: player2.position,
@@ -261,11 +232,9 @@ console.log('Game objects created:', {
   court: court.position
 });
 
-// Force initial render
 console.log('Rendering scene...');
 renderer.render(scene, camera);
 
-// Check if canvas is properly sized
 console.log('Canvas size:', {
   width: canvas.width,
   height: canvas.height,
@@ -273,33 +242,25 @@ console.log('Canvas size:', {
   styleHeight: canvas.style.height
 });
 
-// Check if game container exists and is properly sized
 console.log('Game container:', {
   exists: !!gameContainer,
   width: gameContainer.offsetWidth,
   height: gameContainer.offsetHeight
 });
 
-// Socket event handlers
 socket.on('matchFound', (data) => {
   console.log('Match found with data:', data);
   sessionId = data.sessionId;
   playerNum = data.playerNum;
   gameActive = true;
-  
-  // Hide waiting screen, show score
   waitingScreen.classList.add('hidden');
   scoreDisplay.classList.remove('hidden');
-  
-  // Reset scores
   score = [0, 0];
   updateScoreDisplay();
-  
   console.log('Game is now active, player number:', playerNum);
 });
 
 socket.on('gameStateUpdate', (state) => {
-  // Log state updates occasionally (every ~5 seconds) to avoid console spam
   if (Math.random() < 0.02) {
     console.log('Game state update:', {
       p1: { x: state.p1.x.toFixed(2), y: state.p1.y.toFixed(2) },
@@ -312,8 +273,6 @@ socket.on('gameStateUpdate', (state) => {
       serving: state.serving
     });
   }
-  
-  // Update network state for interpolation
   networkState.p1.x = state.p1.x;
   networkState.p1.y = state.p1.y;
   networkState.p2.x = state.p2.x;
@@ -331,16 +290,10 @@ socket.on('scoreUpdate', (data) => {
 
 socket.on('gameOver', (data) => {
   gameActive = false;
-  
-  // Show game over screen
   gameOverScreen.classList.remove('hidden');
   scoreDisplay.classList.add('hidden');
-  
-  // Update game over screen
   winnerTextElem.textContent = `Player ${data.winner} wins!`;
   finalScoreElem.textContent = `Final Score: ${data.finalScore[0]} - ${data.finalScore[1]}`;
-  
-  // Mark if player won
   if ((playerNum === 1 && data.winner === 1) || (playerNum === 2 && data.winner === 2)) {
     winnerTextElem.textContent += ' (You win!)';
   } else {
@@ -350,20 +303,15 @@ socket.on('gameOver', (data) => {
 
 socket.on('opponentDisconnect', () => {
   gameActive = false;
-  
-  // Hide all screens and show main menu
   waitingScreen.classList.add('hidden');
   gameOverScreen.classList.add('hidden');
   scoreDisplay.classList.add('hidden');
   menuScreen.classList.remove('hidden');
-  
-  // Reset game state
   score = [0, 0];
   playerNum = 0;
   sessionId = null;
 });
 
-// Input handlers
 function handleKeyDown(e) {
   if (!gameActive) return;
   console.log(`Key down: ${e.key}`);
@@ -380,8 +328,8 @@ function handleKeyDown(e) {
         socket.emit('playerInput', { action: 'move', direction: 'right' });
       }
       break;
-    case ' ': // Spacebar
-      e.preventDefault(); // Prevent page scrolling
+    case ' ':
+      e.preventDefault();
       if (!keyState.jump) {
         keyState.jump = true;
         socket.emit('playerInput', { action: 'jump' });
@@ -396,7 +344,6 @@ function handleKeyUp(e) {
   switch (e.key) {
     case 'ArrowLeft':
       keyState.left = false;
-      // Immediately send the correct state
       if (keyState.right) {
         socket.emit('playerInput', { action: 'move', direction: 'right' });
       } else {
@@ -405,14 +352,13 @@ function handleKeyUp(e) {
       break;
     case 'ArrowRight':
       keyState.right = false;
-      // Immediately send the correct state
       if (keyState.left) {
         socket.emit('playerInput', { action: 'move', direction: 'left' });
       } else {
         socket.emit('playerInput', { action: 'stop' });
       }
       break;
-    case ' ': // Spacebar
+    case ' ':
       keyState.jump = false;
       break;
   }
@@ -423,7 +369,6 @@ function updateScoreDisplay() {
   player2ScoreElem.textContent = score[1];
 }
 
-// Event listeners
 findMatchBtn.addEventListener('click', () => {
   console.log('Find Match button clicked, emitting findMatch event');
   menuScreen.classList.add('hidden');
@@ -436,18 +381,7 @@ playAgainBtn.addEventListener('click', () => {
   menuScreen.classList.remove('hidden');
 });
 
-// Add keyboard event listeners
 window.addEventListener('keydown', handleKeyDown);
 window.addEventListener('keyup', handleKeyUp);
 
-// Start animation loop
 animate();
-
-const cors = require('cors');
-
-const allowedOrigins = ['https://pepspeckerball-production.up.railway.app'];
-app.use(cors({
-  origin: allowedOrigins,
-  methods: ['GET', 'POST'],
-  credentials: true // If you need cookies or authentication
-}));
