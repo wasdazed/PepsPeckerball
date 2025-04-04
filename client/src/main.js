@@ -442,3 +442,12 @@ window.addEventListener('keyup', handleKeyUp);
 
 // Start animation loop
 animate();
+
+const cors = require('cors');
+
+const allowedOrigins = ['https://pepspeckerball-production.up.railway.app'];
+app.use(cors({
+  origin: allowedOrigins,
+  methods: ['GET', 'POST'],
+  credentials: true // If you need cookies or authentication
+}));
