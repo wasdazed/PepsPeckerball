@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "start": "vite",
-    "build": "vite build",
+    "build": "VITE_SERVER_URL=$SERVER_URL vite build",
     "preview": "vite preview"
   },
   "author": "",
@@ -17,4 +17,4 @@
   "devDependencies": {
     "vite": "^5.1.6"
   }
-} 
+}

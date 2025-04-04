@@ -12,7 +12,7 @@ const NET_HEIGHT = 225;
 const GROUND_HEIGHT = 15;
 
 // Determine the server URL
-const SERVER_URL = process.env.SERVER_URL || 'http://localhost:3001';
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
 
 // Socket.IO connection
 console.log('Setting up Socket.IO connection to:', SERVER_URL);
