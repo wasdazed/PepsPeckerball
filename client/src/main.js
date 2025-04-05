@@ -1,7 +1,7 @@
 import { io } from 'socket.io-client';
 import * as THREE from 'three';
 
-// Game constants (match server)
+// Game constants (must match server)
 const COURT_WIDTH = 800;
 const COURT_HEIGHT = 480;
 const PLAYER_WIDTH = 65;
@@ -10,58 +10,21 @@ const BALL_RADIUS = 30;
 const NET_WIDTH = 10;
 const NET_HEIGHT = 225;
 const GROUND_HEIGHT = 15;
+const GRAVITY = 0.45;
+const MOVE_SPEED = 10;
+const JUMP_VELOCITY = -12;
 
 //const SERVER_URL = 'http://localhost:3001';
-const SERVER_URL = 'pepspeckerball-production.up.railway.app'; // Replace with your production server URL
+const SERVER_URL = 'https://pepspeckerball-production.up.railway.app'; // Replace with your production URL
 
 // Socket.IO connection
-console.log('Setting up Socket.IO connection to:', SERVER_URL);
+console.log('Connecting to:', SERVER_URL);
 const socket = io(SERVER_URL, {
   withCredentials: true,
   transports: ['websocket', 'polling'],
   reconnection: true,
   reconnectionAttempts: 5,
   reconnectionDelay: 1000
-});
-
-// Track reconnection attempts manually
-let reconnectAttempts = 0;
-
-socket.on('connect', () => {
-  console.log('Connected to server with socket ID:', socket.id);
-  reconnectAttempts = 0;
-  if (!document.getElementById('waiting-screen').classList.contains('hidden')) {
-    console.log('Reconnected while waiting, re-emitting findMatch');
-    socket.emit('findMatch');
-  }
-});
-
-socket.on('connect_error', (error) => {
-  console.error('Connection error:', error.message);
-});
-
-socket.on('disconnect', (reason) => {
-  console.log('Disconnected from server:', reason);
-});
-
-socket.on('reconnect', (attemptNumber) => {
-  console.log(`Reconnected after ${attemptNumber} attempts`);
-  reconnectAttempts = 0;
-});
-
-socket.io.on('reconnect_attempt', () => {
-  reconnectAttempts++;
-  console.log(`Reconnect attempt #${reconnectAttempts}`);
-  if (reconnectAttempts >= 5) {
-    console.error('Reconnection failed after 5 attempts (manual detection)');
-    alert('Unable to reconnect to the server. Please refresh the page.');
-    gameActive = false;
-    reconnectAttempts = 0;
-  }
-});
-
-socket.io.on('reconnect_error', (error) => {
-  console.error('Reconnect error:', error.message);
 });
 
 // Game state
@@ -71,11 +34,16 @@ let gameActive = false;
 let score = [0, 0];
 
 // Interpolation state
-const SERVER_TICK_RATE = 30; // Matches server TICK_RATE (test 60 if you want)
-const SERVER_TICK_MS = 1000 / SERVER_TICK_RATE; // ~33.33ms at 30Hz
+const SERVER_TICK_RATE = 30;
+const SERVER_TICK_MS = 1000 / SERVER_TICK_RATE;
 let previousState = null;
 let currentState = null;
 let interpolationTime = 0;
+
+// Local player prediction state
+let localPlayer = null;
+let remotePlayer = null;
+let localInputs = { left: false, right: false, jump: false };
 
 // DOM elements
 const menuScreen = document.getElementById('menu-screen');
@@ -102,15 +70,15 @@ const scene = new THREE.Scene();
 const camera = new THREE.OrthographicCamera(0, COURT_WIDTH, 0, COURT_HEIGHT, 1, 1000);
 camera.position.z = 100;
 
-const player1 = createPlayer(0x7777ff);
-const player2 = createPlayer(0xff7777);
+const player1 = createPlayer(0x7777ff); // Blue for Player 1
+const player2 = createPlayer(0xff7777); // Red for Player 2
 const ball = createBall();
 const net = createNet();
 const court = createCourt();
 
 player1.position.set(COURT_WIDTH / 4, COURT_HEIGHT - PLAYER_HEIGHT, 5);
 player2.position.set(COURT_WIDTH * 3/4, COURT_HEIGHT - PLAYER_HEIGHT, 5);
-ball.position.set(COURT_WIDTH / 4, COURT_HEIGHT - PLAYER_HEIGHT - PLAYER_HEIGHT - BALL_RADIUS, 6);
+ball.position.set(COURT_WIDTH / 4, COURT_HEIGHT - PLAYER_HEIGHT * 2 - BALL_RADIUS, 6);
 net.position.set(COURT_WIDTH / 2, COURT_HEIGHT - NET_HEIGHT / 2, 5);
 
 scene.add(court);
@@ -176,24 +144,50 @@ function animate() {
 
   requestAnimationFrame(animate);
 
-  if (gameActive) {
+  if (gameActive && localPlayer) {
+    const dt = deltaTime * 60; // Normalize to ~60 FPS to match server physics
+
+    // Predict local player movement
+    if (localInputs.left) {
+      localPlayer.velocity.x = -MOVE_SPEED;
+    } else if (localInputs.right) {
+      localPlayer.velocity.x = MOVE_SPEED;
+    } else {
+      localPlayer.velocity.x = 0;
+    }
+
+    if (localInputs.jump && localPlayer.position.y >= COURT_HEIGHT - PLAYER_HEIGHT) {
+      localPlayer.velocity.y = JUMP_VELOCITY;
+      localInputs.jump = false;
+    }
+
+    localPlayer.velocity.y += GRAVITY * dt;
+    localPlayer.position.x += localPlayer.velocity.x * dt;
+    localPlayer.position.y += localPlayer.velocity.y * dt;
+
+    const minX = playerNum === 1 ? 0 : COURT_WIDTH / 2;
+    const maxX = playerNum === 1 ? COURT_WIDTH / 2 - PLAYER_WIDTH : COURT_WIDTH - PLAYER_WIDTH;
+    localPlayer.position.x = Math.max(minX, Math.min(maxX, localPlayer.position.x));
+    localPlayer.position.y = Math.min(COURT_HEIGHT - PLAYER_HEIGHT, localPlayer.position.y);
+
+    // Interpolate remote player and ball
     if (previousState && currentState) {
-      interpolationTime += deltaTime * 1000; // ms
-      const alpha = Math.min(interpolationTime / SERVER_TICK_MS, 1); // 0 to 1
+      interpolationTime += deltaTime * 1000;
+      const alpha = Math.min(interpolationTime / SERVER_TICK_MS, 1);
 
-      // Interpolate Player 1
-      const p1X = lerp(previousState.p1.x + PLAYER_WIDTH / 2, currentState.p1.x + PLAYER_WIDTH / 2, alpha);
-      const p1Y = lerp(previousState.p1.y, currentState.p1.y, alpha);
-      player1.position.x = p1X;
-      player1.position.y = p1Y;
+      const remoteP1X = lerp(previousState.p1.x + PLAYER_WIDTH / 2, currentState.p1.x + PLAYER_WIDTH / 2, alpha);
+      const remoteP1Y = lerp(previousState.p1.y, currentState.p1.y, alpha);
+      const remoteP2X = lerp(previousState.p2.x + PLAYER_WIDTH / 2, currentState.p2.x + PLAYER_WIDTH / 2, alpha);
+      const remoteP2Y = lerp(previousState.p2.y, currentState.p2.y, alpha);
 
-      // Interpolate Player 2
-      const p2X = lerp(previousState.p2.x + PLAYER_WIDTH / 2, currentState.p2.x + PLAYER_WIDTH / 2, alpha);
-      const p2Y = lerp(previousState.p2.y, currentState.p2.y, alpha);
-      player2.position.x = p2X;
-      player2.position.y = p2Y;
+      if (playerNum === 1) {
+        remotePlayer.position.x = remoteP2X;
+        remotePlayer.position.y = remoteP2Y;
+      } else {
+        remotePlayer.position.x = remoteP1X;
+        remotePlayer.position.y = remoteP1Y;
+      }
 
-      // Interpolate Ball
       if (currentState.serving) {
         ball.position.x = currentState.ball.x;
         ball.position.y = currentState.ball.y;
@@ -205,19 +199,9 @@ function animate() {
       }
       ball.visible = currentState.ball.visible;
 
-      // Reset interpolation when fully caught up
       if (alpha >= 1) {
-        interpolationTime -= SERVER_TICK_MS; // Carry over excess time
+        interpolationTime -= SERVER_TICK_MS;
       }
-    } else if (currentState) {
-      // First update: Snap to position
-      player1.position.x = currentState.p1.x + PLAYER_WIDTH / 2;
-      player1.position.y = currentState.p1.y;
-      player2.position.x = currentState.p2.x + PLAYER_WIDTH / 2;
-      player2.position.y = currentState.p2.y;
-      ball.position.x = currentState.ball.x;
-      ball.position.y = currentState.ball.y;
-      ball.visible = currentState.ball.visible;
     }
   }
 
@@ -230,10 +214,7 @@ function lerp(start, end, alpha) {
 
 animate();
 
-menuScreen.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-waitingScreen.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-gameOverScreen.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-
+// Socket.IO event handlers
 socket.on('matchFound', (data) => {
   sessionId = data.sessionId;
   playerNum = data.playerNum;
@@ -245,10 +226,21 @@ socket.on('matchFound', (data) => {
   previousState = null;
   currentState = null;
   interpolationTime = 0;
+  localPlayer = playerNum === 1 ? player1 : player2;
+  remotePlayer = playerNum === 1 ? player2 : player1;
+  localPlayer.velocity = { x: 0, y: 0 };
 });
 
 socket.on('gameStateUpdate', (state) => {
-  previousState = currentState || state; // Use currentState if available, else state
+  if (playerNum === 1) {
+    localPlayer.position.x = state.p1.x + PLAYER_WIDTH / 2;
+    localPlayer.position.y = state.p1.y;
+  } else if (playerNum === 2) {
+    localPlayer.position.x = state.p2.x + PLAYER_WIDTH / 2;
+    localPlayer.position.y = state.p2.y;
+  }
+
+  previousState = currentState || state;
   currentState = state;
   interpolationTime = 0;
 });
@@ -283,18 +275,21 @@ socket.on('opponentDisconnect', (data) => {
   console.log('Opponent disconnected:', data.reason);
 });
 
+// Input handling
 function handleKeyDown(e) {
   if (!gameActive) return;
   switch (e.key) {
     case 'ArrowLeft':
       if (!keyState.left) {
         keyState.left = true;
+        localInputs.left = true;
         socket.emit('playerInput', { action: 'move', direction: 'left' });
       }
       break;
     case 'ArrowRight':
       if (!keyState.right) {
         keyState.right = true;
+        localInputs.right = true;
         socket.emit('playerInput', { action: 'move', direction: 'right' });
       }
       break;
@@ -302,6 +297,7 @@ function handleKeyDown(e) {
       e.preventDefault();
       if (!keyState.jump) {
         keyState.jump = true;
+        localInputs.jump = true;
         socket.emit('playerInput', { action: 'jump' });
       }
       break;
@@ -313,6 +309,7 @@ function handleKeyUp(e) {
   switch (e.key) {
     case 'ArrowLeft':
       keyState.left = false;
+      localInputs.left = false;
       if (keyState.right) {
         socket.emit('playerInput', { action: 'move', direction: 'right' });
       } else {
@@ -321,6 +318,7 @@ function handleKeyUp(e) {
       break;
     case 'ArrowRight':
       keyState.right = false;
+      localInputs.right = false;
       if (keyState.left) {
         socket.emit('playerInput', { action: 'move', direction: 'left' });
       } else {
@@ -338,6 +336,7 @@ function updateScoreDisplay() {
   player2ScoreElem.textContent = score[1];
 }
 
+// Event listeners
 findMatchBtn.addEventListener('click', () => {
   menuScreen.classList.add('hidden');
   waitingScreen.classList.remove('hidden');
@@ -351,5 +350,3 @@ playAgainBtn.addEventListener('click', () => {
 
 window.addEventListener('keydown', handleKeyDown);
 window.addEventListener('keyup', handleKeyUp);
-
-animate();

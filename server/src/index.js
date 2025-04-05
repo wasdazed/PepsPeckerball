@@ -14,11 +14,10 @@ const PLAYER_HEIGHT = 65;
 const BALL_RADIUS = 30;
 const NET_WIDTH = 10;
 const NET_HEIGHT = 225;
-const GRAVITY = 0.5;
+const GRAVITY = 0.45;
 const JUMP_VELOCITY = -12;
 const MOVE_SPEED = 10;
 const MAX_SCORE = 11;
-const SERVE_DELAY = 1000;
 
 const app = express();
 const server = http.createServer(app);
@@ -45,7 +44,7 @@ app.get('*', (req, res) => {
   if (fs.existsSync(indexPath)) {
     res.sendFile(indexPath);
   } else {
-    res.status(200).send(`<!DOCTYPE html><html>...</html>`); // Your fallback HTML
+    res.status(200).send(`<!DOCTYPE html><html>...</html>`); // Replace with your fallback HTML
   }
 });
 
@@ -89,10 +88,9 @@ class GameSession {
     };
     this.servingState = {
       isServing: true,
-      servingPlayer: 1,
-      serveTimer: SERVE_DELAY
+      servingPlayer: 1
     };
-    this.server = 1;
+    this.server = 1; // Tracks who serves next
     this.isGameActive = true;
     this.lastUpdateTime = Date.now();
     this.startGameLoop();
@@ -106,7 +104,7 @@ class GameSession {
 
   update() {
     const now = Date.now();
-    const dt = (now - this.lastUpdateTime) / 16.67;
+    const dt = (now - this.lastUpdateTime) / 16.67; // Normalized to ~60 FPS
     this.lastUpdateTime = now;
     if (!this.isGameActive) return;
 
@@ -114,6 +112,7 @@ class GameSession {
     this.updatePlayer(this.player2, dt, COURT_WIDTH / 2, COURT_WIDTH - PLAYER_WIDTH);
 
     if (this.servingState.isServing) {
+      // Keep ball stationary above serving player
       if (this.servingState.servingPlayer === 1) {
         this.ball.x = COURT_WIDTH / 4;
       } else {
@@ -121,7 +120,6 @@ class GameSession {
       }
       this.ball.y = COURT_HEIGHT - (PLAYER_HEIGHT * 2 + BALL_RADIUS);
       this.ball.velocity = { x: 0, y: 0 };
-      this.servingState.serveTimer -= dt * 16.67;
     } else {
       this.updateBall(dt);
     }
@@ -129,68 +127,6 @@ class GameSession {
     this.checkPlayerBallCollisions();
     this.checkScoring();
     this.broadcastGameState();
-  }
-
-  checkPlayerBallCollisions() {
-    if (this.checkCollision(
-      this.ball.x - this.ball.radius, this.ball.y - this.ball.radius,
-      this.ball.radius * 2, this.ball.radius * 2,
-      this.player1.x, this.player1.y, this.player1.width, this.player1.height
-    )) {
-      this.handlePlayerBallCollision(this.player1);
-    }
-    if (this.checkCollision(
-      this.ball.x - this.ball.radius, this.ball.y - this.ball.radius,
-      this.ball.radius * 2, this.ball.radius * 2,
-      this.player2.x, this.player2.y, this.player2.width, this.player2.height
-    )) {
-      this.handlePlayerBallCollision(this.player2);
-    }
-  }
-
-  updateBall(dt) {
-    this.ball.velocity.y += GRAVITY * dt;
-    this.ball.x += this.ball.velocity.x * dt;
-    this.ball.y += this.ball.velocity.y * dt;
-
-    if (this.ball.x - this.ball.radius < 0) {
-      this.ball.x = this.ball.radius;
-      this.ball.velocity.x = -this.ball.velocity.x * 0.9;
-    } else if (this.ball.x + this.ball.radius > COURT_WIDTH) {
-      this.ball.x = COURT_WIDTH - this.ball.radius;
-      this.ball.velocity.x = -this.ball.velocity.x * 0.9;
-    }
-
-    if (this.ball.y - this.ball.radius < 0) {
-      this.ball.y = this.ball.radius;
-      this.ball.velocity.y = -this.ball.velocity.y * 0.9;
-    }
-
-    if (this.checkCollision(
-      this.ball.x - this.ball.radius, this.ball.y - this.ball.radius,
-      this.ball.radius * 2, this.ball.radius * 2,
-      this.net.x, this.net.y, this.net.width, this.net.height
-    )) {
-      if (this.ball.x < this.net.x) {
-        this.ball.x = this.net.x - this.ball.radius;
-      } else {
-        this.ball.x = this.net.x + this.net.width + this.ball.radius;
-      }
-      this.ball.velocity.x = -this.ball.velocity.x * 0.9;
-    }
-  }
-
-  handlePlayerBallCollision(player) {
-    if (this.servingState.isServing && this.servingState.serveTimer > 0) return;
-    this.servingState.isServing = false;
-    const hitPoint = (this.ball.x - (player.x + player.width / 2)) / (player.width / 2);
-    if (this.ball.velocity.x === 0) {
-      this.ball.velocity.x = (this.servingState.servingPlayer === 1 ? 1 : -1) * Math.abs(hitPoint * 10);
-    } else {
-      this.ball.velocity.x = hitPoint * 10;
-    }
-    this.ball.velocity.y = -10 - Math.abs(hitPoint * 4);
-    this.ball.y = player.y - this.ball.radius;
   }
 
   updatePlayer(player, dt, minX, maxX) {
@@ -215,8 +151,59 @@ class GameSession {
     player.y = Math.min(COURT_HEIGHT - player.height, player.y);
   }
 
+  updateBall(dt) {
+    this.ball.velocity.y += GRAVITY * dt;
+    this.ball.x += this.ball.velocity.x * dt;
+    this.ball.y += this.ball.velocity.y * dt;
+
+    if (this.ball.x - this.ball.radius < 0) {
+      this.ball.x = this.ball.radius;
+      this.ball.velocity.x = -this.ball.velocity.x * 0.8;
+    } else if (this.ball.x + this.ball.radius > COURT_WIDTH) {
+      this.ball.x = COURT_WIDTH - this.ball.radius;
+      this.ball.velocity.x = -this.ball.velocity.x * 0.8;
+    }
+
+    if (this.ball.y - this.ball.radius < 0) {
+      this.ball.y = this.ball.radius;
+      this.ball.velocity.y = -this.ball.velocity.y * 0.8;
+    }
+
+    if (this.checkCollision(
+      this.ball.x - this.ball.radius, this.ball.y - this.ball.radius,
+      this.ball.radius * 2, this.ball.radius * 2,
+      this.net.x, this.net.y, this.net.width, this.net.height
+    )) {
+      if (this.ball.x < this.net.x) {
+        this.ball.x = this.net.x - this.ball.radius;
+      } else {
+        this.ball.x = this.net.x + this.net.width + this.ball.radius;
+      }
+      this.ball.velocity.x = -this.ball.velocity.x * 0.8;
+    }
+  }
+
   checkCollision(x1, y1, w1, h1, x2, y2, w2, h2) {
     return x1 < x2 + w2 && x1 + w1 > x2 && y1 < y2 + h2 && y1 + h1 > y2;
+  }
+
+  checkPlayerBallCollisions() {
+    [this.player1, this.player2].forEach((player, index) => {
+      const dx = this.ball.x - (player.x + PLAYER_WIDTH / 2);
+      const dy = this.ball.y - (player.y + PLAYER_HEIGHT / 2);
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      if (distance < BALL_RADIUS + PLAYER_WIDTH / 2) {
+        if (this.servingState.isServing && (index + 1) === this.servingState.servingPlayer) {
+          this.servingState.isServing = false; // Start ball movement only on serving player's hit
+        }
+        const angle = Math.atan2(dy, dx);
+        const speed = Math.sqrt(this.ball.velocity.x ** 2 + this.ball.velocity.y ** 2) || 10; // Default speed if still
+        this.ball.velocity.x = Math.cos(angle) * speed * 1.2 + player.velocity.x * 0.5;
+        this.ball.velocity.y = Math.sin(angle) * speed * 1.2 + player.velocity.y * 0.5;
+        this.ball.x = player.x + PLAYER_WIDTH / 2 + Math.cos(angle) * (BALL_RADIUS + PLAYER_WIDTH / 2 + 1);
+        this.ball.y = player.y + PLAYER_HEIGHT / 2 + Math.sin(angle) * (BALL_RADIUS + PLAYER_WIDTH / 2 + 1);
+      }
+    });
   }
 
   checkScoring() {
@@ -249,8 +236,7 @@ class GameSession {
     this.ball.velocity = { x: 0, y: 0 };
     this.servingState = {
       isServing: true,
-      servingPlayer: this.server,
-      serveTimer: SERVE_DELAY
+      servingPlayer: this.server
     };
   }
 
@@ -267,16 +253,13 @@ class GameSession {
   }
 
   broadcastGameState() {
-    const player1Socket = io.sockets.sockets.get(this.player1.id);
-    const player2Socket = io.sockets.sockets.get(this.player2.id);
-    const gameState = {
+    const state = {
       p1: { x: this.player1.x, y: this.player1.y },
       p2: { x: this.player2.x, y: this.player2.y },
       ball: { x: this.ball.x, y: this.ball.y, visible: true },
       serving: this.servingState.isServing
     };
-    if (player1Socket) player1Socket.emit('gameStateUpdate', gameState);
-    if (player2Socket) player2Socket.emit('gameStateUpdate', gameState);
+    io.to(this.id).emit('gameStateUpdate', state);
   }
 
   broadcastScore() {
@@ -310,15 +293,12 @@ io.on('connection', (socket) => {
   socket.on('disconnect', (reason) => {
     console.log(`Player ${socket.id} disconnected, reason: ${reason}`);
 
-    // Clean up waiting players
     const waitingIndex = waitingPlayers.indexOf(socket.id);
     if (waitingIndex !== -1) {
       waitingPlayers.splice(waitingIndex, 1);
       console.log(`Removed ${socket.id} from waiting queue`);
-      return; // Early return if only in waiting queue
     }
 
-    // Clean up active sessions
     for (const [sessionId, session] of activeSessions.entries()) {
       if (session.player1.id === socket.id || session.player2.id === socket.id) {
         const otherPlayerId = session.player1.id === socket.id ? session.player2.id : session.player1.id;
@@ -326,12 +306,10 @@ io.on('connection', (socket) => {
         if (otherPlayerSocket) {
           otherPlayerSocket.emit('opponentDisconnect', { reason: `Player ${socket.id} disconnected` });
           console.log(`Notified ${otherPlayerId} of opponent disconnect`);
-        } else {
-          console.log(`No notification sent: ${otherPlayerId} already disconnected`);
         }
         session.cleanup();
         activeSessions.delete(sessionId);
-        console.log(`Session ${sessionId} terminated immediately due to disconnect`);
+        console.log(`Session ${sessionId} terminated due to disconnect`);
         break;
       }
     }
