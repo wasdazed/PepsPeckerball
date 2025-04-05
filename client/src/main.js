@@ -36,9 +36,9 @@ let score = [0, 0];
 // Interpolation state
 const SERVER_TICK_RATE = 30;
 const SERVER_TICK_MS = 1000 / SERVER_TICK_RATE;
-let previousState = null;
-let currentState = null;
-let interpolationTime = 0;
+let stateHistory = [];
+const interpolationDelay = 100; // ms, adjust based on average latency
+let localPlayerTarget = { x: 0, y: 0 };
 
 // Local player prediction state
 let localPlayer = null;
@@ -146,6 +146,7 @@ function animate() {
 
   if (gameActive && localPlayer) {
     const dt = deltaTime * 60; // Normalize to ~60 FPS to match server physics
+    const renderTime = now - interpolationDelay; // Render time for interpolation
 
     // Predict local player movement
     if (localInputs.left) {
@@ -170,15 +171,29 @@ function animate() {
     localPlayer.position.x = Math.max(minX, Math.min(maxX, localPlayer.position.x));
     localPlayer.position.y = Math.min(COURT_HEIGHT - PLAYER_HEIGHT, localPlayer.position.y);
 
-    // Interpolate remote player and ball
-    if (previousState && currentState) {
-      interpolationTime += deltaTime * 1000;
-      const alpha = Math.min(interpolationTime / SERVER_TICK_MS, 1);
+    // Smooth correction for local player
+    const correctionSpeed = 0.1; // Adjust (0-1, higher = faster correction)
+    localPlayer.position.x += (localPlayerTarget.x - localPlayer.position.x) * correctionSpeed;
+    localPlayer.position.y += (localPlayerTarget.y - localPlayer.position.y) * correctionSpeed;
 
-      const remoteP1X = lerp(previousState.p1.x + PLAYER_WIDTH / 2, currentState.p1.x + PLAYER_WIDTH / 2, alpha);
-      const remoteP1Y = lerp(previousState.p1.y, currentState.p1.y, alpha);
-      const remoteP2X = lerp(previousState.p2.x + PLAYER_WIDTH / 2, currentState.p2.x + PLAYER_WIDTH / 2, alpha);
-      const remoteP2Y = lerp(previousState.p2.y, currentState.p2.y, alpha);
+    // Interpolate remote player and ball using state history
+    let stateA = null, stateB = null;
+    for (let i = stateHistory.length - 1; i >= 1; i--) {
+      if (stateHistory[i - 1].timestamp <= renderTime && stateHistory[i].timestamp >= renderTime) {
+        stateA = stateHistory[i - 1];
+        stateB = stateHistory[i];
+        break;
+      }
+    }
+
+    if (stateA && stateB) {
+      const alpha = (renderTime - stateA.timestamp) / (stateB.timestamp - stateA.timestamp);
+      const remoteP1X = lerp(stateA.p1.x + PLAYER_WIDTH / 2, stateB.p1.x + PLAYER_WIDTH / 2, alpha);
+      const remoteP1Y = lerp(stateA.p1.y, stateB.p1.y, alpha);
+      const remoteP2X = lerp(stateA.p2.x + PLAYER_WIDTH / 2, stateB.p2.x + PLAYER_WIDTH / 2, alpha);
+      const remoteP2Y = lerp(stateA.p2.y, stateB.p2.y, alpha);
+      const ballX = lerp(stateA.ball.x, stateB.ball.x, alpha);
+      const ballY = lerp(stateA.ball.y, stateB.ball.y, alpha);
 
       if (playerNum === 1) {
         remotePlayer.position.x = remoteP2X;
@@ -187,21 +202,22 @@ function animate() {
         remotePlayer.position.x = remoteP1X;
         remotePlayer.position.y = remoteP1Y;
       }
-
-      if (currentState.serving) {
-        ball.position.x = currentState.ball.x;
-        ball.position.y = currentState.ball.y;
+      ball.position.x = ballX;
+      ball.position.y = ballY;
+      ball.visible = stateB.ball.visible;
+    } else if (stateHistory.length > 0) {
+      // Fallback to the latest state if no bracketing pair is found
+      const latestState = stateHistory[stateHistory.length - 1];
+      if (playerNum === 1) {
+        remotePlayer.position.x = latestState.p2.x + PLAYER_WIDTH / 2;
+        remotePlayer.position.y = latestState.p2.y;
       } else {
-        const ballX = lerp(previousState.ball.x, currentState.ball.x, alpha);
-        const ballY = lerp(previousState.ball.y, currentState.ball.y, alpha);
-        ball.position.x = ballX;
-        ball.position.y = ballY;
+        remotePlayer.position.x = latestState.p1.x + PLAYER_WIDTH / 2;
+        remotePlayer.position.y = latestState.p1.y;
       }
-      ball.visible = currentState.ball.visible;
-
-      if (alpha >= 1) {
-        interpolationTime -= SERVER_TICK_MS;
-      }
+      ball.position.x = latestState.ball.x;
+      ball.position.y = latestState.ball.y;
+      ball.visible = latestState.ball.visible;
     }
   }
 
@@ -223,26 +239,24 @@ socket.on('matchFound', (data) => {
   scoreDisplay.classList.remove('hidden');
   score = [0, 0];
   updateScoreDisplay();
-  previousState = null;
-  currentState = null;
-  interpolationTime = 0;
+  stateHistory = []; // Clear state history
   localPlayer = playerNum === 1 ? player1 : player2;
   remotePlayer = playerNum === 1 ? player2 : player1;
   localPlayer.velocity = { x: 0, y: 0 };
 });
 
 socket.on('gameStateUpdate', (state) => {
-  if (playerNum === 1) {
-    localPlayer.position.x = state.p1.x + PLAYER_WIDTH / 2;
-    localPlayer.position.y = state.p1.y;
-  } else if (playerNum === 2) {
-    localPlayer.position.x = state.p2.x + PLAYER_WIDTH / 2;
-    localPlayer.position.y = state.p2.y;
-  }
+  state.timestamp = Date.now();
+  stateHistory.push(state);
+  if (stateHistory.length > 20) stateHistory.shift(); // Keep last 20 states
 
-  previousState = currentState || state;
-  currentState = state;
-  interpolationTime = 0;
+  if (playerNum === 1) {
+    localPlayerTarget.x = state.p1.x + PLAYER_WIDTH / 2;
+    localPlayerTarget.y = state.p1.y;
+  } else if (playerNum === 2) {
+    localPlayerTarget.x = state.p2.x + PLAYER_WIDTH / 2;
+    localPlayerTarget.y = state.p2.y;
+  }
 });
 
 socket.on('scoreUpdate', (data) => {
