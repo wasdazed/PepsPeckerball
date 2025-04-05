@@ -12,7 +12,7 @@ const NET_HEIGHT = 225;
 const GROUND_HEIGHT = 15;
 
 //const SERVER_URL = 'http://localhost:3001';
-const SERVER_URL = 'https://pepspeckerball-production.up.railway.app'; // Use this for production
+const SERVER_URL = 'pepspeckerball-production.up.railway.app'; // Replace with your production server URL
 
 // Socket.IO connection
 console.log('Setting up Socket.IO connection to:', SERVER_URL);
@@ -29,7 +29,7 @@ let reconnectAttempts = 0;
 
 socket.on('connect', () => {
   console.log('Connected to server with socket ID:', socket.id);
-  reconnectAttempts = 0; // Reset on successful connect
+  reconnectAttempts = 0;
   if (!document.getElementById('waiting-screen').classList.contains('hidden')) {
     console.log('Reconnected while waiting, re-emitting findMatch');
     socket.emit('findMatch');
@@ -46,10 +46,9 @@ socket.on('disconnect', (reason) => {
 
 socket.on('reconnect', (attemptNumber) => {
   console.log(`Reconnected after ${attemptNumber} attempts`);
-  reconnectAttempts = 0; // Reset on successful reconnect
+  reconnectAttempts = 0;
 });
 
-// Use socket.io for lower-level events
 socket.io.on('reconnect_attempt', () => {
   reconnectAttempts++;
   console.log(`Reconnect attempt #${reconnectAttempts}`);
@@ -57,7 +56,7 @@ socket.io.on('reconnect_attempt', () => {
     console.error('Reconnection failed after 5 attempts (manual detection)');
     alert('Unable to reconnect to the server. Please refresh the page.');
     gameActive = false;
-    reconnectAttempts = 0; // Reset to avoid repeated alerts
+    reconnectAttempts = 0;
   }
 });
 
@@ -65,14 +64,18 @@ socket.io.on('reconnect_error', (error) => {
   console.error('Reconnect error:', error.message);
 });
 
-// Remove unreliable native 'reconnect_failed' handler since it’s not firing
-// socket.on('reconnect_failed', ...) removed
-
 // Game state
 let playerNum = 0;
 let sessionId = null;
 let gameActive = false;
 let score = [0, 0];
+
+// Interpolation state
+const SERVER_TICK_RATE = 30; // Matches server TICK_RATE (test 60 if you want)
+const SERVER_TICK_MS = 1000 / SERVER_TICK_RATE; // ~33.33ms at 30Hz
+let previousState = null;
+let currentState = null;
+let interpolationTime = 0;
 
 // DOM elements
 const menuScreen = document.getElementById('menu-screen');
@@ -117,12 +120,6 @@ scene.add(player2);
 scene.add(ball);
 
 const keyState = { left: false, right: false, jump: false };
-const networkState = {
-  p1: { x: 50, y: COURT_HEIGHT - PLAYER_HEIGHT },
-  p2: { x: COURT_WIDTH - PLAYER_WIDTH - 50, y: COURT_HEIGHT - PLAYER_HEIGHT },
-  ball: { x: 50 + PLAYER_WIDTH / 2, y: COURT_HEIGHT - (2 * PLAYER_HEIGHT), visible: true },
-  serving: true
-};
 
 function createPlayer(color) {
   const geometry = new THREE.CircleGeometry(PLAYER_WIDTH / 2, 32);
@@ -170,32 +167,65 @@ function createCourt() {
   return court;
 }
 
+let lastFrameTime = performance.now();
+
 function animate() {
+  const now = performance.now();
+  const deltaTime = (now - lastFrameTime) / 1000; // Seconds
+  lastFrameTime = now;
+
   requestAnimationFrame(animate);
+
   if (gameActive) {
-    const speedFactor = 0.8;
-    const targetP1X = networkState.p1.x + PLAYER_WIDTH / 2;
-    const targetP1Y = networkState.p1.y;
-    const targetP2X = networkState.p2.x + PLAYER_WIDTH / 2;
-    const targetP2Y = networkState.p2.y;
-    const targetBallX = networkState.ball.x;
-    const targetBallY = networkState.ball.y;
+    if (previousState && currentState) {
+      interpolationTime += deltaTime * 1000; // ms
+      const alpha = Math.min(interpolationTime / SERVER_TICK_MS, 1); // 0 to 1
 
-    player1.position.x += (targetP1X - player1.position.x) * 0.3 * speedFactor;
-    player1.position.y += (targetP1Y - player1.position.y) * 0.3 * speedFactor;
-    player2.position.x += (targetP2X - player2.position.x) * 0.3 * speedFactor;
-    player2.position.y += (targetP2Y - player2.position.y) * 0.3 * speedFactor;
+      // Interpolate Player 1
+      const p1X = lerp(previousState.p1.x + PLAYER_WIDTH / 2, currentState.p1.x + PLAYER_WIDTH / 2, alpha);
+      const p1Y = lerp(previousState.p1.y, currentState.p1.y, alpha);
+      player1.position.x = p1X;
+      player1.position.y = p1Y;
 
-    if (networkState.serving) {
-      ball.position.x = targetBallX;
-      ball.position.y = targetBallY;
-    } else {
-      ball.position.x += (targetBallX - ball.position.x) * 0.3 * speedFactor;
-      ball.position.y += (targetBallY - ball.position.y) * 0.3 * speedFactor;
+      // Interpolate Player 2
+      const p2X = lerp(previousState.p2.x + PLAYER_WIDTH / 2, currentState.p2.x + PLAYER_WIDTH / 2, alpha);
+      const p2Y = lerp(previousState.p2.y, currentState.p2.y, alpha);
+      player2.position.x = p2X;
+      player2.position.y = p2Y;
+
+      // Interpolate Ball
+      if (currentState.serving) {
+        ball.position.x = currentState.ball.x;
+        ball.position.y = currentState.ball.y;
+      } else {
+        const ballX = lerp(previousState.ball.x, currentState.ball.x, alpha);
+        const ballY = lerp(previousState.ball.y, currentState.ball.y, alpha);
+        ball.position.x = ballX;
+        ball.position.y = ballY;
+      }
+      ball.visible = currentState.ball.visible;
+
+      // Reset interpolation when fully caught up
+      if (alpha >= 1) {
+        interpolationTime -= SERVER_TICK_MS; // Carry over excess time
+      }
+    } else if (currentState) {
+      // First update: Snap to position
+      player1.position.x = currentState.p1.x + PLAYER_WIDTH / 2;
+      player1.position.y = currentState.p1.y;
+      player2.position.x = currentState.p2.x + PLAYER_WIDTH / 2;
+      player2.position.y = currentState.p2.y;
+      ball.position.x = currentState.ball.x;
+      ball.position.y = currentState.ball.y;
+      ball.visible = currentState.ball.visible;
     }
-    ball.visible = networkState.ball.visible;
   }
+
   renderer.render(scene, camera);
+}
+
+function lerp(start, end, alpha) {
+  return start + (end - start) * alpha;
 }
 
 animate();
@@ -212,17 +242,15 @@ socket.on('matchFound', (data) => {
   scoreDisplay.classList.remove('hidden');
   score = [0, 0];
   updateScoreDisplay();
+  previousState = null;
+  currentState = null;
+  interpolationTime = 0;
 });
 
 socket.on('gameStateUpdate', (state) => {
-  networkState.p1.x = state.p1.x;
-  networkState.p1.y = state.p1.y;
-  networkState.p2.x = state.p2.x;
-  networkState.p2.y = state.p2.y;
-  networkState.ball.x = state.ball.x;
-  networkState.ball.y = state.ball.y;
-  networkState.ball.visible = state.ball.visible;
-  networkState.serving = state.serving;
+  previousState = currentState || state; // Use currentState if available, else state
+  currentState = state;
+  interpolationTime = 0;
 });
 
 socket.on('scoreUpdate', (data) => {
@@ -243,7 +271,7 @@ socket.on('gameOver', (data) => {
   }
 });
 
-socket.on('opponentDisconnect', () => {
+socket.on('opponentDisconnect', (data) => {
   gameActive = false;
   waitingScreen.classList.add('hidden');
   gameOverScreen.classList.add('hidden');
@@ -252,6 +280,7 @@ socket.on('opponentDisconnect', () => {
   score = [0, 0];
   playerNum = 0;
   sessionId = null;
+  console.log('Opponent disconnected:', data.reason);
 });
 
 function handleKeyDown(e) {
