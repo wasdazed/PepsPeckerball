@@ -6,7 +6,7 @@ const path = require('path');
 const fs = require('fs');
 
 // Game constants
-const TICK_RATE = 30; // Updates per second
+const TICK_RATE = 30;
 const COURT_WIDTH = 800;
 const COURT_HEIGHT = 480;
 const PLAYER_WIDTH = 65;
@@ -18,13 +18,11 @@ const GRAVITY = 0.5;
 const JUMP_VELOCITY = -12;
 const MOVE_SPEED = 10;
 const MAX_SCORE = 11;
-const SERVE_DELAY = 1000; // 1 second delay
+const SERVE_DELAY = 1000;
 
-// Setup Express
 const app = express();
 const server = http.createServer(app);
 
-// Configure Socket.IO with CORS
 const io = new Server(server, {
   cors: {
     origin: ['http://localhost:5173', 'https://pepspeckerball-production.up.railway.app'],
@@ -36,44 +34,24 @@ const io = new Server(server, {
   pingInterval: 25000
 });
 
-// Serve static files
 app.use(express.static(path.join(__dirname, '../../client/dist')));
 
-// Health check route
 app.get('/health', (req, res) => {
   res.status(200).send('Server is running');
 });
 
-// Fallback route for SPA
 app.get('*', (req, res) => {
   const indexPath = path.join(__dirname, '../../client/dist/index.html');
   if (fs.existsSync(indexPath)) {
     res.sendFile(indexPath);
   } else {
-    res.status(200).send(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Pepe's Peckerball Server</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
-          h1 { color: #333; }
-        </style>
-      </head>
-      <body>
-        <h1>Pepe's Peckerball Server is Running</h1>
-        <p>The game server is operational and ready for WebSocket connections.</p>
-      </body>
-      </html>
-    `);
+    res.status(200).send(`<!DOCTYPE html><html>...</html>`); // Your fallback HTML
   }
 });
 
-// Game state
 const waitingPlayers = [];
 const activeSessions = new Map();
 
-// Game session class
 class GameSession {
   constructor(player1Id, player2Id) {
     this.id = uuidv4();
@@ -128,7 +106,7 @@ class GameSession {
 
   update() {
     const now = Date.now();
-    const dt = Math.min(33, now - this.lastUpdateTime) / 16.67;
+    const dt = (now - this.lastUpdateTime) / 16.67;
     this.lastUpdateTime = now;
     if (!this.isGameActive) return;
 
@@ -322,38 +300,47 @@ class GameSession {
 
   cleanup() {
     clearInterval(this.intervalId);
+    this.isGameActive = false;
   }
 }
 
-// Socket.IO connection handling
 io.on('connection', (socket) => {
   console.log(`Player connected: ${socket.id}`);
 
   socket.on('disconnect', (reason) => {
-    console.log(`Player disconnected: ${socket.id}, Reason: ${reason}`);
+    console.log(`Player ${socket.id} disconnected, reason: ${reason}`);
 
+    // Clean up waiting players
     const waitingIndex = waitingPlayers.indexOf(socket.id);
     if (waitingIndex !== -1) {
       waitingPlayers.splice(waitingIndex, 1);
+      console.log(`Removed ${socket.id} from waiting queue`);
+      return; // Early return if only in waiting queue
     }
 
+    // Clean up active sessions
     for (const [sessionId, session] of activeSessions.entries()) {
       if (session.player1.id === socket.id || session.player2.id === socket.id) {
         const otherPlayerId = session.player1.id === socket.id ? session.player2.id : session.player1.id;
-        io.to(otherPlayerId).emit('opponentDisconnect');
+        const otherPlayerSocket = io.sockets.sockets.get(otherPlayerId);
+        if (otherPlayerSocket) {
+          otherPlayerSocket.emit('opponentDisconnect', { reason: `Player ${socket.id} disconnected` });
+          console.log(`Notified ${otherPlayerId} of opponent disconnect`);
+        } else {
+          console.log(`No notification sent: ${otherPlayerId} already disconnected`);
+        }
         session.cleanup();
         activeSessions.delete(sessionId);
-        console.log(`Session ${sessionId} cleaned up due to disconnect`);
+        console.log(`Session ${sessionId} terminated immediately due to disconnect`);
         break;
       }
     }
-
-    socket.emit('disconnected', { reason });
   });
 
   socket.on('findMatch', () => {
     if (!waitingPlayers.includes(socket.id)) {
       waitingPlayers.push(socket.id);
+      console.log(`Player ${socket.id} added to waiting queue`);
     }
 
     if (waitingPlayers.length >= 2) {
@@ -386,7 +373,6 @@ io.on('connection', (socket) => {
   });
 });
 
-// Start the server
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);

@@ -11,7 +11,7 @@ const NET_WIDTH = 10;
 const NET_HEIGHT = 225;
 const GROUND_HEIGHT = 15;
 
-// const SERVER_URL = 'http://localhost:3001';
+//const SERVER_URL = 'http://localhost:3001';
 const SERVER_URL = 'https://pepspeckerball-production.up.railway.app'; // Use this for production
 
 // Socket.IO connection
