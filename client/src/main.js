@@ -11,39 +11,33 @@ const NET_WIDTH = 10;
 const NET_HEIGHT = 225;
 const GROUND_HEIGHT = 15;
 
-// Determine the server URL
-const SERVER_URL = 'https://pepspeckerball-production.up.railway.app';
+// const SERVER_URL = 'http://localhost:3001';
+const SERVER_URL = 'https://pepspeckerball-production.up.railway.app'; // Use this for production
 
 // Socket.IO connection
 console.log('Setting up Socket.IO connection to:', SERVER_URL);
 const socket = io(SERVER_URL, {
   withCredentials: true,
   transports: ['websocket', 'polling'],
+  reconnection: true,
   reconnectionAttempts: 5,
   reconnectionDelay: 1000
 });
 
+// Track reconnection attempts manually
+let reconnectAttempts = 0;
+
 socket.on('connect', () => {
   console.log('Connected to server with socket ID:', socket.id);
-  console.log('Transport used:', socket.io.engine.transport.name);
-  
-  socket.io.engine.on('upgrade', (transport) => {
-    console.log('Transport upgraded to:', transport.name);
-  });
-  
-  if (document.getElementById('waiting-screen').classList.contains('visible') || 
-      !document.getElementById('waiting-screen').classList.contains('hidden')) {
-    console.log('Reconnected while waiting for match, re-emitting findMatch');
+  reconnectAttempts = 0; // Reset on successful connect
+  if (!document.getElementById('waiting-screen').classList.contains('hidden')) {
+    console.log('Reconnected while waiting, re-emitting findMatch');
     socket.emit('findMatch');
   }
 });
 
 socket.on('connect_error', (error) => {
-  console.error('Socket connection error:', error.message);
-  console.error('Error details:', error);
-  if (error.message === 'xhr poll error') {
-    console.log('Polling failed - likely due to server not serving /socket.io/ or CORS misconfiguration');
-  }
+  console.error('Connection error:', error.message);
 });
 
 socket.on('disconnect', (reason) => {
@@ -51,12 +45,28 @@ socket.on('disconnect', (reason) => {
 });
 
 socket.on('reconnect', (attemptNumber) => {
-  console.log(`Reconnected to server after ${attemptNumber} attempts`);
+  console.log(`Reconnected after ${attemptNumber} attempts`);
+  reconnectAttempts = 0; // Reset on successful reconnect
 });
 
-socket.on('reconnect_attempt', (attemptNumber) => {
-  console.log(`Reconnection attempt #${attemptNumber}`);
+// Use socket.io for lower-level events
+socket.io.on('reconnect_attempt', () => {
+  reconnectAttempts++;
+  console.log(`Reconnect attempt #${reconnectAttempts}`);
+  if (reconnectAttempts >= 5) {
+    console.error('Reconnection failed after 5 attempts (manual detection)');
+    alert('Unable to reconnect to the server. Please refresh the page.');
+    gameActive = false;
+    reconnectAttempts = 0; // Reset to avoid repeated alerts
+  }
 });
+
+socket.io.on('reconnect_error', (error) => {
+  console.error('Reconnect error:', error.message);
+});
+
+// Remove unreliable native 'reconnect_failed' handler since it’s not firing
+// socket.on('reconnect_failed', ...) removed
 
 // Game state
 let playerNum = 0;
@@ -86,13 +96,9 @@ const gameContainer = document.getElementById('game-container');
 gameContainer.appendChild(canvas);
 
 const scene = new THREE.Scene();
-
-const camera = new THREE.OrthographicCamera(
-  0, COURT_WIDTH, 0, COURT_HEIGHT, 1, 1000
-);
+const camera = new THREE.OrthographicCamera(0, COURT_WIDTH, 0, COURT_HEIGHT, 1, 1000);
 camera.position.z = 100;
 
-console.log('Creating game objects...');
 const player1 = createPlayer(0x7777ff);
 const player2 = createPlayer(0xff7777);
 const ball = createBall();
@@ -104,19 +110,13 @@ player2.position.set(COURT_WIDTH * 3/4, COURT_HEIGHT - PLAYER_HEIGHT, 5);
 ball.position.set(COURT_WIDTH / 4, COURT_HEIGHT - PLAYER_HEIGHT - PLAYER_HEIGHT - BALL_RADIUS, 6);
 net.position.set(COURT_WIDTH / 2, COURT_HEIGHT - NET_HEIGHT / 2, 5);
 
-console.log('Adding objects to scene...');
 scene.add(court);
 scene.add(net);
 scene.add(player1);
 scene.add(player2);
 scene.add(ball);
 
-const keyState = {
-  left: false,
-  right: false,
-  jump: false
-};
-
+const keyState = { left: false, right: false, jump: false };
 const networkState = {
   p1: { x: 50, y: COURT_HEIGHT - PLAYER_HEIGHT },
   p2: { x: COURT_WIDTH - PLAYER_WIDTH - 50, y: COURT_HEIGHT - PLAYER_HEIGHT },
@@ -126,46 +126,30 @@ const networkState = {
 
 function createPlayer(color) {
   const geometry = new THREE.CircleGeometry(PLAYER_WIDTH / 2, 32);
-  const material = new THREE.MeshBasicMaterial({ 
-    color,
-    side: THREE.DoubleSide
-  });
+  const material = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide });
   return new THREE.Mesh(geometry, material);
 }
 
 function createBall() {
   const geometry = new THREE.CircleGeometry(BALL_RADIUS, 32);
-  const material = new THREE.MeshBasicMaterial({ 
-    color: 0xffffff,
-    side: THREE.DoubleSide
-  });
+  const material = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
   return new THREE.Mesh(geometry, material);
 }
 
 function createNet() {
   const geometry = new THREE.BoxGeometry(NET_WIDTH, NET_HEIGHT, 10);
-  const material = new THREE.MeshBasicMaterial({ 
-    color: 0xcccccc,
-    side: THREE.DoubleSide
-  });
-  const net = new THREE.Mesh(geometry, material);
-  return net;
+  const material = new THREE.MeshBasicMaterial({ color: 0xcccccc, side: THREE.DoubleSide });
+  return new THREE.Mesh(geometry, material);
 }
 
 function createCourt() {
   const groundGeometry = new THREE.BoxGeometry(COURT_WIDTH, GROUND_HEIGHT, 20);
-  const groundMaterial = new THREE.MeshBasicMaterial({ 
-    color: 0x008800,
-    side: THREE.DoubleSide
-  });
+  const groundMaterial = new THREE.MeshBasicMaterial({ color: 0x008800, side: THREE.DoubleSide });
   const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-  ground.position.set(COURT_WIDTH / 2, COURT_HEIGHT - GROUND_HEIGHT *2, 0);
+  ground.position.set(COURT_WIDTH / 2, COURT_HEIGHT - GROUND_HEIGHT * 2, 0);
 
   const leftWallGeometry = new THREE.BoxGeometry(20, COURT_HEIGHT, 20);
-  const wallMaterial = new THREE.MeshBasicMaterial({ 
-    color: 0x888888,
-    side: THREE.DoubleSide
-  });
+  const wallMaterial = new THREE.MeshBasicMaterial({ color: 0x888888, side: THREE.DoubleSide });
   const leftWall = new THREE.Mesh(leftWallGeometry, wallMaterial);
   leftWall.position.set(-10, COURT_HEIGHT / 2, 0);
 
@@ -174,10 +158,7 @@ function createCourt() {
   rightWall.position.set(COURT_WIDTH + 10, COURT_HEIGHT / 2, 0);
 
   const ceilingGeometry = new THREE.BoxGeometry(COURT_WIDTH, 20, 20);
-  const ceilingMaterial = new THREE.MeshBasicMaterial({ 
-    color: 0x888888,
-    side: THREE.DoubleSide
-  });
+  const ceilingMaterial = new THREE.MeshBasicMaterial({ color: 0x888888, side: THREE.DoubleSide });
   const ceiling = new THREE.Mesh(ceilingGeometry, ceilingMaterial);
   ceiling.position.set(COURT_WIDTH / 2, -20, 0);
 
@@ -192,7 +173,6 @@ function createCourt() {
 function animate() {
   requestAnimationFrame(animate);
   if (gameActive) {
-    const lerpFactor = 0.2;
     const speedFactor = 0.8;
     const targetP1X = networkState.p1.x + PLAYER_WIDTH / 2;
     const targetP1Y = networkState.p1.y;
@@ -224,32 +204,7 @@ menuScreen.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
 waitingScreen.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
 gameOverScreen.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
 
-console.log('Game objects created:', {
-  player1: player1.position,
-  player2: player2.position,
-  ball: ball.position,
-  net: net.position,
-  court: court.position
-});
-
-console.log('Rendering scene...');
-renderer.render(scene, camera);
-
-console.log('Canvas size:', {
-  width: canvas.width,
-  height: canvas.height,
-  styleWidth: canvas.style.width,
-  styleHeight: canvas.style.height
-});
-
-console.log('Game container:', {
-  exists: !!gameContainer,
-  width: gameContainer.offsetWidth,
-  height: gameContainer.offsetHeight
-});
-
 socket.on('matchFound', (data) => {
-  console.log('Match found with data:', data);
   sessionId = data.sessionId;
   playerNum = data.playerNum;
   gameActive = true;
@@ -257,22 +212,9 @@ socket.on('matchFound', (data) => {
   scoreDisplay.classList.remove('hidden');
   score = [0, 0];
   updateScoreDisplay();
-  console.log('Game is now active, player number:', playerNum);
 });
 
 socket.on('gameStateUpdate', (state) => {
-  if (Math.random() < 0.02) {
-    console.log('Game state update:', {
-      p1: { x: state.p1.x.toFixed(2), y: state.p1.y.toFixed(2) },
-      p2: { x: state.p2.x.toFixed(2), y: state.p2.y.toFixed(2) },
-      ball: { 
-        x: state.ball.x.toFixed(2), 
-        y: state.ball.y.toFixed(2),
-        visible: state.ball.visible
-      },
-      serving: state.serving
-    });
-  }
   networkState.p1.x = state.p1.x;
   networkState.p1.y = state.p1.y;
   networkState.p2.x = state.p2.x;
@@ -314,7 +256,6 @@ socket.on('opponentDisconnect', () => {
 
 function handleKeyDown(e) {
   if (!gameActive) return;
-  console.log(`Key down: ${e.key}`);
   switch (e.key) {
     case 'ArrowLeft':
       if (!keyState.left) {
@@ -340,7 +281,6 @@ function handleKeyDown(e) {
 
 function handleKeyUp(e) {
   if (!gameActive) return;
-  console.log(`Key up: ${e.key}`);
   switch (e.key) {
     case 'ArrowLeft':
       keyState.left = false;
@@ -370,7 +310,6 @@ function updateScoreDisplay() {
 }
 
 findMatchBtn.addEventListener('click', () => {
-  console.log('Find Match button clicked, emitting findMatch event');
   menuScreen.classList.add('hidden');
   waitingScreen.classList.remove('hidden');
   socket.emit('findMatch');
