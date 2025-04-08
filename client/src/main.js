@@ -11,8 +11,8 @@ const NET_WIDTH = 10;
 const NET_HEIGHT = 225;
 const GROUND_HEIGHT = 15;
 const GRAVITY = 0.5;
-const MOVE_SPEED = 13;
-const JUMP_VELOCITY = -13;
+const MOVE_SPEED = 10;
+const JUMP_VELOCITY = -12;
 
 const SERVER_URL = 'https://pepspeckerball-production.up.railway.app'; // Production URL
 //const SERVER_URL = 'http://localhost:3001'; // Local development URL
@@ -37,7 +37,7 @@ let score = [0, 0];
 const SERVER_TICK_RATE = 60;
 const SERVER_TICK_MS = 1000 / SERVER_TICK_RATE;
 let stateHistory = [];
-const interpolationDelay = 25; // Try 50 or 150 based on latency
+const interpolationDelay = 400; // Try 50 or 150 based on latency
 let localPlayerTarget = { x: 0, y: 0 };
 
 // Define variables at the top of the file
@@ -182,7 +182,7 @@ function animate() {
         localPlayer.position.y = Math.min(COURT_HEIGHT - PLAYER_HEIGHT, localPlayer.position.y);
 
         // Smooth correction
-        const correctionSpeed = 0.5;
+        const correctionSpeed = 0.8;
         localPlayer.position.x += (localPlayerTarget.x - localPlayer.position.x) * correctionSpeed;
         localPlayer.position.y += (localPlayerTarget.y - localPlayer.position.y) * correctionSpeed;
 

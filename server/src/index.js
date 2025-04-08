@@ -15,8 +15,8 @@ const BALL_RADIUS = 30;
 const NET_WIDTH = 10;
 const NET_HEIGHT = 225;
 const GRAVITY = 0.5;
-const JUMP_VELOCITY = -13;
-const MOVE_SPEED = 13;
+const JUMP_VELOCITY = -12;
+const MOVE_SPEED = 10;
 const MAX_SCORE = 11;
 
 const app = express();
