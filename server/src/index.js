@@ -6,7 +6,7 @@ const path = require('path');
 const fs = require('fs');
 
 // Game constants
-const TICK_RATE = 30; // You can try 60 if the server can handle it
+const TICK_RATE = 60; // You can try 60 if the server can handle it
 const COURT_WIDTH = 800;
 const COURT_HEIGHT = 480;
 const PLAYER_WIDTH = 65;
@@ -14,9 +14,9 @@ const PLAYER_HEIGHT = 65;
 const BALL_RADIUS = 30;
 const NET_WIDTH = 10;
 const NET_HEIGHT = 225;
-const GRAVITY = 0.45;
-const JUMP_VELOCITY = -16;
-const MOVE_SPEED = 15;
+const GRAVITY = 0.5;
+const JUMP_VELOCITY = -13;
+const MOVE_SPEED = 13;
 const MAX_SCORE = 11;
 
 const app = express();
@@ -192,7 +192,7 @@ class GameSession {
       const dx = this.ball.x - (player.x + PLAYER_WIDTH / 2);
       const dy = this.ball.y - (player.y + PLAYER_HEIGHT / 2);
       const distance = Math.sqrt(dx * dx + dy * dy);
-      if (distance < BALL_RADIUS + PLAYER_WIDTH / 2 + 10) {
+      if (distance < BALL_RADIUS + PLAYER_WIDTH / 2) {
         if (this.servingState.isServing && (index + 1) === this.servingState.servingPlayer) {
           this.servingState.isServing = false; // Start ball movement only on serving player's hit
         }
