@@ -349,6 +349,10 @@ io.on('connection', (socket) => {
       }
     }
   });
+
+  socket.on('ping', (data) => {
+    socket.emit('pong', { time: data.time }); // Send pong with the same timestamp
+  });
 });
 
 const PORT = process.env.PORT || 3001;

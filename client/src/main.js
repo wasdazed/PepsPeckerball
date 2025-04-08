@@ -40,6 +40,13 @@ let stateHistory = [];
 const interpolationDelay = 25; // Try 50 or 150 based on latency
 let localPlayerTarget = { x: 0, y: 0 };
 
+// Define variables at the top of the file
+let lastPingTime = 0;
+const pingInterval = 1000; // Ping every 1 second
+let rttHistory = []; // Store recent RTTs
+const maxHistory = 10; // Keep the last 10 RTTs for averaging
+
+
 // Local player prediction state
 let localPlayer = null;
 let remotePlayer = null;
@@ -142,6 +149,12 @@ function animate() {
     const deltaTime = (now - lastFrameTime) / 1000;
     lastFrameTime = now;
 
+    // RTT measurement
+    if (Date.now() - lastPingTime > pingInterval) {
+      lastPingTime = Date.now();
+      socket.emit('ping', { time: lastPingTime }); // Send ping with timestamp
+    }
+
     requestAnimationFrame(animate);
 
     if (gameActive && localPlayer) {
@@ -169,7 +182,7 @@ function animate() {
         localPlayer.position.y = Math.min(COURT_HEIGHT - PLAYER_HEIGHT, localPlayer.position.y);
 
         // Smooth correction
-        const correctionSpeed = 0.1;
+        const correctionSpeed = 0.5;
         localPlayer.position.x += (localPlayerTarget.x - localPlayer.position.x) * correctionSpeed;
         localPlayer.position.y += (localPlayerTarget.y - localPlayer.position.y) * correctionSpeed;
 
@@ -242,11 +255,7 @@ socket.on('matchFound', (data) => {
 
 socket.on('gameStateUpdate', (state) => {
     state.timestamp = Date.now();
-    if (stateHistory.length > 0) {
-        const lastTime = stateHistory[stateHistory.length - 1].timestamp;
-        const delay = state.timestamp - lastTime;
-        console.log(`Network update interval: ${delay}ms`);
-    }
+
     stateHistory.push(state);
     if (stateHistory.length > 20) stateHistory.shift();
 
@@ -287,6 +296,17 @@ socket.on('opponentDisconnect', (data) => {
     playerNum = 0;
     sessionId = null;
     console.log('Opponent disconnected:', data.reason);
+});
+
+socket.on('pong', (data) => {
+  const receivedTime = Date.now();
+  const rtt = receivedTime - data.time; // Calculate RTT
+  rttHistory.push(rtt);
+  if (rttHistory.length > maxHistory) {
+      rttHistory.shift(); // Remove oldest RTT
+  }
+  const averageRtt = rttHistory.reduce((a, b) => a + b, 0) / rttHistory.length;
+  console.log(`RTT: ${rtt}ms, Average RTT: ${averageRtt.toFixed(2)}ms`);
 });
 
 // Input handling
