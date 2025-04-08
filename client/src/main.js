@@ -10,7 +10,7 @@ const BALL_RADIUS = 30;
 const NET_WIDTH = 10;
 const NET_HEIGHT = 225;
 const GROUND_HEIGHT = 15;
-const GRAVITY = 0.4;
+const GRAVITY = 0.45;
 const MOVE_SPEED = 15;
 const JUMP_VELOCITY = -18;
 
@@ -33,7 +33,7 @@ let gameActive = false;
 let score = [0, 0];
 
 // Interpolation state
-const SERVER_TICK_RATE = 30;
+const SERVER_TICK_RATE = 60;
 const SERVER_TICK_MS = 1000 / SERVER_TICK_RATE;
 let stateHistory = [];
 const interpolationDelay = 50; // Try 50 or 150 based on latency
