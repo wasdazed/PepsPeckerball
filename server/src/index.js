@@ -6,7 +6,7 @@ const path = require('path');
 const fs = require('fs');
 
 // Game constants
-const TICK_RATE = 60; // You can try 60 if the server can handle it
+const TICK_RATE = 30; // You can try 60 if the server can handle it
 const COURT_WIDTH = 800;
 const COURT_HEIGHT = 480;
 const PLAYER_WIDTH = 65;
