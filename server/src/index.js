@@ -15,7 +15,7 @@ const BALL_RADIUS = 30;
 const NET_WIDTH = 10;
 const NET_HEIGHT = 225;
 const GRAVITY = 0.45;
-const JUMP_VELOCITY = -18;
+const JUMP_VELOCITY = -16;
 const MOVE_SPEED = 15;
 const MAX_SCORE = 11;
 
@@ -192,7 +192,7 @@ class GameSession {
       const dx = this.ball.x - (player.x + PLAYER_WIDTH / 2);
       const dy = this.ball.y - (player.y + PLAYER_HEIGHT / 2);
       const distance = Math.sqrt(dx * dx + dy * dy);
-      if (distance < BALL_RADIUS + PLAYER_WIDTH / 2) {
+      if (distance < BALL_RADIUS + PLAYER_WIDTH / 2 + 10) {
         if (this.servingState.isServing && (index + 1) === this.servingState.servingPlayer) {
           this.servingState.isServing = false; // Start ball movement only on serving player's hit
         }
