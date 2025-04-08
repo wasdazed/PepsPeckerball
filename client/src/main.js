@@ -10,9 +10,9 @@ const BALL_RADIUS = 30;
 const NET_WIDTH = 10;
 const NET_HEIGHT = 225;
 const GROUND_HEIGHT = 15;
-const GRAVITY = 0.45;
-const MOVE_SPEED = 10;
-const JUMP_VELOCITY = -12;
+const GRAVITY = 0.4;
+const MOVE_SPEED = 15;
+const JUMP_VELOCITY = -18;
 
 const SERVER_URL = 'https://pepspeckerball-production.up.railway.app'; // Production URL
 
@@ -36,7 +36,7 @@ let score = [0, 0];
 const SERVER_TICK_RATE = 30;
 const SERVER_TICK_MS = 1000 / SERVER_TICK_RATE;
 let stateHistory = [];
-const interpolationDelay = 100; // Try 50 or 150 based on latency
+const interpolationDelay = 50; // Try 50 or 150 based on latency
 let localPlayerTarget = { x: 0, y: 0 };
 
 // Local player prediction state

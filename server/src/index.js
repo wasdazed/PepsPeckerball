@@ -14,9 +14,9 @@ const PLAYER_HEIGHT = 65;
 const BALL_RADIUS = 30;
 const NET_WIDTH = 10;
 const NET_HEIGHT = 225;
-const GRAVITY = 0.45;
-const JUMP_VELOCITY = -12;
-const MOVE_SPEED = 10;
+const GRAVITY = 0.4;
+const JUMP_VELOCITY = -18;
+const MOVE_SPEED = 15;
 const MAX_SCORE = 11;
 
 const app = express();
