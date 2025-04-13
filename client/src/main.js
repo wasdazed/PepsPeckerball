@@ -14,8 +14,8 @@ const GRAVITY = 0.5;
 const MOVE_SPEED = 10;
 const JUMP_VELOCITY = -12;
 
-const SERVER_URL = 'https://pepspeckerball-production.up.railway.app'; // Production URL
-//const SERVER_URL = 'http://localhost:3001'; // Local development URL
+//const SERVER_URL = 'https://pepspeckerball-production.up.railway.app'; // Production URL
+const SERVER_URL = 'http://localhost:3001'; // Local development URL
 
 // Socket.IO connection
 console.log('Connecting to:', SERVER_URL);
@@ -307,6 +307,10 @@ socket.on('pong', (data) => {
   }
   const averageRtt = rttHistory.reduce((a, b) => a + b, 0) / rttHistory.length;
   console.log(`RTT: ${rtt}ms, Average RTT: ${averageRtt.toFixed(2)}ms`);
+});
+
+socket.on('connect', () => {
+  console.log('Transport:', socket.io.engine.transport.name);
 });
 
 // Input handling
