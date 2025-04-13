@@ -4,8 +4,6 @@ const { Server } = require('socket.io');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
-app.use(express.static('client')); // OR ../../client, try both
-
 
 // Game constants
 const TICK_RATE = 60; // You can try 60 if the server can handle it
@@ -22,7 +20,9 @@ const MOVE_SPEED = 10;
 const MAX_SCORE = 11;
 
 const app = express();
+app.use(express.static('client')); // OR ../../client, try both
 const server = http.createServer(app);
+
 
 const io = new Server(server, {
   cors: {
