@@ -1,19 +1,23 @@
 {
-  "name": "arcade-volleyball",
+  "name": "pepspeckerball",
   "version": "1.0.0",
-  "description": "A multiplayer 2D Arcade Volleyball clone",
+  "description": "Pep’s Peckerball for $pep memecoin crew",
   "main": "server/src/index.js",
   "scripts": {
-    "start": "cd server && npm start",
-    "start:server": "cd server && npm start",
+    "start": "node server/src/index.js",
+    "start:server": "node server/src/index.js",
     "start:client": "cd client && npm start",
     "dev": "concurrently \"npm run start:server\" \"npm run start:client\"",
-    "install:all": "npm install && cd client && npm install && cd ../server && npm install",
+    "install:all": "npm install && cd client && npm install",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
   "license": "ISC",
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  },
   "devDependencies": {
     "concurrently": "^8.2.2"
   }
-} 
+}
