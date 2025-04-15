@@ -1,3 +1,4 @@
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -20,13 +21,25 @@ const MOVE_SPEED = 10;
 const MAX_SCORE = 11;
 
 const app = express();
-app.use(express.static('client')); // OR ../../client, try both
 const server = http.createServer(app);
 
+// Serve static files from client/dist/
+const distPath = path.join(__dirname, '../../client/dist');
+app.use(express.static(distPath));
+
+// Fallback to index.html for all routes
+app.get('*', (req, res) => {
+  const indexPath = path.join(distPath, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.status(404).send('Game not built. Run `npm run build`.');
+  }
+});
 
 const io = new Server(server, {
   cors: {
-    origin: ['http://localhost:5173', 'https://pepspeckerball-production.up.railway.app'],
+    origin: ['http://localhost:3001'],
     methods: ["GET", "POST"],
     credentials: true
   },
@@ -35,20 +48,11 @@ const io = new Server(server, {
   pingInterval: 25000
 });
 
-app.use(express.static(path.join(__dirname, '../../client/dist')));
-
 app.get('/health', (req, res) => {
   res.status(200).send('Server is running');
 });
 
-app.get('*', (req, res) => {
-  const indexPath = path.join(__dirname, '../../client/dist/index.html');
-  if (fs.existsSync(indexPath)) {
-    res.sendFile(indexPath);
-  } else {
-    res.status(200).send(`<!DOCTYPE html><html>...</html>`); // Replace with your fallback HTML
-  }
-});
+
 
 const waitingPlayers = [];
 const activeSessions = new Map();
