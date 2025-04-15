@@ -19,13 +19,14 @@ const SERVER_URL = 'http://localhost:3001'; // Local development URL
 
 // Socket.IO connection
 console.log('Connecting to:', SERVER_URL);
-const socket = io(SERVER_URL, {
-    withCredentials: true,
-    transports: ['websocket', 'polling'],
-    reconnection: true,
-    reconnectionAttempts: 5,
-    reconnectionDelay: 1000
-});
+const socket = io();
+// const socket = io(SERVER_URL, {
+//     withCredentials: true,
+//     transports: ['websocket', 'polling'],
+//     reconnection: true,
+//     reconnectionAttempts: 5,
+//     reconnectionDelay: 1000
+// });
 
 // Game state
 let playerNum = 0;
