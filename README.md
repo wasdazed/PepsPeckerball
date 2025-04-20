@@ -1,4 +1,4 @@
-# Arcade Volleyball - Multiplayer Game
+# Peps Peckerball - Multiplayer Game
 
 A simple 2D clone of Arcade Volleyball with real-time multiplayer functionality, matchmaking, and multiple 1:1 sessions running simultaneously.
 
