@@ -3,16 +3,18 @@
   "version": "1.0.0",
   "scripts": {
     "start": "node server/src/index.js",
-    "build": "vite build --outDir dist"
+    "build": "vite build",
+    "test": "http-server client/dist -p 3001"
   },
   "dependencies": {
     "express": "^4.18.2",
     "socket.io": "^4.7.5",
     "socket.io-client": "^4.7.5",
-    "three": "^0.167.0",
-    "uuid": "^10.0.0"
+    "phaser": "^3.86.0",
+    "uuid": "^10.0.0",
+    "http-server": "^14.1.1"
   },
   "devDependencies": {
-    "vite": "^5.0.0"
+    "vite": "^5.4.8"
   }
 }

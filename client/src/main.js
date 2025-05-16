@@ -1,7 +1,8 @@
+import Phaser from 'phaser';
 import { io } from 'socket.io-client';
-import * as THREE from 'three';
+import pepImageUrl from './assets/pep.jpg?url';
 
-// Game constants (must match server)
+// Game constants
 const COURT_WIDTH = 800;
 const COURT_HEIGHT = 480;
 const PLAYER_WIDTH = 65;
@@ -10,50 +11,32 @@ const BALL_RADIUS = 30;
 const NET_WIDTH = 10;
 const NET_HEIGHT = 225;
 const GROUND_HEIGHT = 15;
-const GRAVITY = 0.5;
-const MOVE_SPEED = 10;
-const JUMP_VELOCITY = -12;
+const GRAVITY = 500;
+const MOVE_SPEED = 200;
+const JUMP_VELOCITY = -350;
 
-//const SERVER_URL = 'https://pepspeckerball-production.up.railway.app'; // Production URL
-const SERVER_URL = 'http://localhost:3001'; // Local development URL
+const SERVER_URL = 'http://localhost:3001';
+const socket = io(SERVER_URL, {
+    transports: ['websocket', 'polling'],
+    reconnection: true,
+    reconnectionAttempts: 5,
+    reconnectionDelay: 1000
+});
 
-// Socket.IO connection
-console.log('Connecting to:', SERVER_URL);
-const socket = io();
-// const socket = io(SERVER_URL, {
-//     withCredentials: true,
-//     transports: ['websocket', 'polling'],
-//     reconnection: true,
-//     reconnectionAttempts: 5,
-//     reconnectionDelay: 1000
-// });
-
-// Game state
 let playerNum = 0;
 let sessionId = null;
 let gameActive = false;
 let score = [0, 0];
 
-// Interpolation state
 const SERVER_TICK_RATE = 60;
 const SERVER_TICK_MS = 1000 / SERVER_TICK_RATE;
 let stateHistory = [];
-const interpolationDelay = 400; // Try 50 or 150 based on latency
+const interpolationDelay = 100;
 let localPlayerTarget = { x: 0, y: 0 };
-
-// Define variables at the top of the file
-let lastPingTime = 0;
-const pingInterval = 1000; // Ping every 1 second
-let rttHistory = []; // Store recent RTTs
-const maxHistory = 10; // Keep the last 10 RTTs for averaging
-
-
-// Local player prediction state
 let localPlayer = null;
 let remotePlayer = null;
 let localInputs = { left: false, right: false, jump: false };
 
-// DOM elements
 const menuScreen = document.getElementById('menu-screen');
 const waitingScreen = document.getElementById('waiting-screen');
 const gameOverScreen = document.getElementById('game-over-screen');
@@ -65,213 +48,215 @@ const finalScoreElem = document.getElementById('final-score');
 const findMatchBtn = document.getElementById('find-match-btn');
 const playAgainBtn = document.getElementById('play-again-btn');
 
-// Three.js setup
-const canvas = document.getElementById('gameCanvas');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setSize(COURT_WIDTH, COURT_HEIGHT);
-renderer.setClearColor(0x87CEEB);
+const config = {
+    type: Phaser.AUTO,
+    width: COURT_WIDTH,
+    height: COURT_HEIGHT,
+    parent: 'game-container',
+    physics: {
+        default: 'arcade',
+        arcade: {
+            gravity: { y: GRAVITY },
+            debug: false
+        }
+    },
+    scene: {
+        preload: preload,
+        create: create,
+        update: update
+    },
+    backgroundColor: '#000000'
+};
 
-const gameContainer = document.getElementById('game-container');
-gameContainer.appendChild(canvas);
+const game = new Phaser.Game(config);
 
-const scene = new THREE.Scene();
-const camera = new THREE.OrthographicCamera(0, COURT_WIDTH, 0, COURT_HEIGHT, 1, 1000);
-camera.position.z = 100;
-
-const player1 = createPlayer(0x7777ff);
-const player2 = createPlayer(0xff7777);
-const ball = createBall();
-const net = createNet();
-const court = createCourt();
-
-player1.position.set(COURT_WIDTH / 4, COURT_HEIGHT - PLAYER_HEIGHT, 5);
-player2.position.set(COURT_WIDTH * 3/4, COURT_HEIGHT - PLAYER_HEIGHT, 5);
-ball.position.set(COURT_WIDTH / 4, COURT_HEIGHT - PLAYER_HEIGHT * 2 - BALL_RADIUS, 6);
-net.position.set(COURT_WIDTH / 2, COURT_HEIGHT - NET_HEIGHT / 2, 5);
-
-scene.add(court);
-scene.add(net);
-scene.add(player1);
-scene.add(player2);
-scene.add(ball);
-
-const keyState = { left: false, right: false, jump: false };
-
-function createPlayer(color) {
-    const geometry = new THREE.CircleGeometry(PLAYER_WIDTH / 2, 32);
-    const material = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide });
-    return new THREE.Mesh(geometry, material);
+function preload() {
+    this.load.image('pep', pepImageUrl);
 }
 
-function createBall() {
-    const geometry = new THREE.CircleGeometry(BALL_RADIUS, 32);
-    const material = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
-    return new THREE.Mesh(geometry, material);
+function create() {
+    this.physics.world.setBounds(0, 0, COURT_WIDTH, COURT_HEIGHT);
+
+   
+
+    const leftWall = this.add.rectangle(0, COURT_HEIGHT / 2, 20, COURT_HEIGHT, 0x000000);
+    this.physics.add.existing(leftWall, true);
+
+    const rightWall = this.add.rectangle(COURT_WIDTH, COURT_HEIGHT / 2, 20, COURT_HEIGHT, 0x000000);
+    this.physics.add.existing(rightWall, true);
+
+    const ceiling = this.add.rectangle(COURT_WIDTH / 2, 0, COURT_WIDTH, 20, 0x000000);
+    this.physics.add.existing(ceiling, true);
+
+    this.net = this.add.rectangle(COURT_WIDTH / 2, COURT_HEIGHT - NET_HEIGHT / 2, NET_WIDTH, NET_HEIGHT, 0xd3d3d3); // Light grey
+    this.physics.add.existing(this.net, true);
+
+    this.ground = this.add.rectangle(COURT_WIDTH / 2, COURT_HEIGHT - GROUND_HEIGHT / 2, COURT_WIDTH, GROUND_HEIGHT, 0x00ff00); // Green
+    this.physics.add.existing(this.ground, true);
+
+    this.player1 = this.physics.add.sprite(COURT_WIDTH / 4, COURT_HEIGHT - PLAYER_HEIGHT, 'pep')
+        .setDisplaySize(PLAYER_WIDTH, PLAYER_HEIGHT).setCollideWorldBounds(true);
+    this.player2 = this.physics.add.sprite(COURT_WIDTH * 3/4, COURT_HEIGHT - PLAYER_HEIGHT, 'pep')
+        .setDisplaySize(PLAYER_WIDTH, PLAYER_HEIGHT).setCollideWorldBounds(true);
+
+    this.ball = this.physics.add.sprite(COURT_WIDTH / 4, COURT_HEIGHT - PLAYER_HEIGHT * 2 - BALL_RADIUS, 'pep')
+        .setDisplaySize(BALL_RADIUS * 2, BALL_RADIUS * 2).setCircle(BALL_RADIUS).setCollideWorldBounds(true);
+
+    this.physics.add.collider([this.player1, this.player2, this.ball], [this.ground, leftWall, rightWall, ceiling, this.net]);
+    this.physics.add.collider(this.ball, this.net, () => {
+        this.ball.setVelocityX(-this.ball.body.velocity.x * 0.8);
+    });
+    this.physics.add.collider(this.player1, this.ball, handlePlayerBallCollision, null, this);
+    this.physics.add.collider(this.player2, this.ball, handlePlayerBallCollision, null, this);
+
+    this.cursors = this.input.keyboard.createCursorKeys();
+
+    this.scoreText = this.add.text(16, 16, 'Score: 0 - 0', { fontSize: '24px', color: '#fff' });
+    this.updateScoreDisplay = updateScoreDisplay.bind(this);
+
+    console.log('Ground created at:', this.ground.x, this.ground.y);
 }
 
-function createNet() {
-    const geometry = new THREE.BoxGeometry(NET_WIDTH, NET_HEIGHT, 10);
-    const material = new THREE.MeshBasicMaterial({ color: 0xcccccc, side: THREE.DoubleSide });
-    return new THREE.Mesh(geometry, material);
+function handlePlayerBallCollision(player, ball) {
+    const dx = ball.x - player.x;
+    const dy = ball.y - player.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    if (distance < BALL_RADIUS + PLAYER_WIDTH / 2) {
+        const angle = Math.atan2(dy, dx);
+        const speed = Math.sqrt(ball.body.velocity.x ** 2 + ball.body.velocity.y ** 2) || 300;
+        ball.setVelocity(
+            Math.cos(angle) * speed * 1.2 + player.body.velocity.x * 0.5,
+            Math.sin(angle) * speed * 1.2 + player.body.velocity.y * 0.5
+        );
+        ball.x = player.x + Math.cos(angle) * (BALL_RADIUS + PLAYER_WIDTH / 2 + 1);
+        ball.y = player.y + Math.sin(angle) * (BALL_RADIUS + PLAYER_HEIGHT / 2 + 1);
+    }
 }
 
-function createCourt() {
-    const groundGeometry = new THREE.BoxGeometry(COURT_WIDTH, GROUND_HEIGHT, 20);
-    const groundMaterial = new THREE.MeshBasicMaterial({ color: 0x008800, side: THREE.DoubleSide });
-    const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-    ground.position.set(COURT_WIDTH / 2, COURT_HEIGHT - GROUND_HEIGHT * 2, 0);
+function update(time, delta) {
+    if (!gameActive || !localPlayer) return;
 
-    const leftWallGeometry = new THREE.BoxGeometry(20, COURT_HEIGHT, 20);
-    const wallMaterial = new THREE.MeshBasicMaterial({ color: 0x888888, side: THREE.DoubleSide });
-    const leftWall = new THREE.Mesh(leftWallGeometry, wallMaterial);
-    leftWall.position.set(-10, COURT_HEIGHT / 2, 0);
+    console.log('Ground position:', this.ground.x, this.ground.y);
 
-    const rightWallGeometry = new THREE.BoxGeometry(20, COURT_HEIGHT, 20);
-    const rightWall = new THREE.Mesh(rightWallGeometry, wallMaterial);
-    rightWall.position.set(COURT_WIDTH + 10, COURT_HEIGHT / 2, 0);
+    const dt = delta / 1000;
 
-    const ceilingGeometry = new THREE.BoxGeometry(COURT_WIDTH, 20, 20);
-    const ceilingMaterial = new THREE.MeshBasicMaterial({ color: 0x888888, side: THREE.DoubleSide });
-    const ceiling = new THREE.Mesh(ceilingGeometry, ceilingMaterial);
-    ceiling.position.set(COURT_WIDTH / 2, -20, 0);
-
-    const court = new THREE.Group();
-    court.add(ground);
-    court.add(leftWall);
-    court.add(rightWall);
-    court.add(ceiling);
-    return court;
-}
-
-let lastFrameTime = performance.now();
-
-function animate() {
-    const now = performance.now();
-    const deltaTime = (now - lastFrameTime) / 1000;
-    lastFrameTime = now;
-
-    // RTT measurement
-    if (Date.now() - lastPingTime > pingInterval) {
-      lastPingTime = Date.now();
-      socket.emit('ping', { time: lastPingTime }); // Send ping with timestamp
+    if (localInputs.left) {
+        localPlayer.setVelocityX(-MOVE_SPEED);
+    } else if (localInputs.right) {
+        localPlayer.setVelocityX(MOVE_SPEED);
+    } else {
+        localPlayer.setVelocityX(0);
+    }
+    if (localInputs.jump && localPlayer.body.touching.down) {
+        localPlayer.setVelocityY(JUMP_VELOCITY);
+        localInputs.jump = false;
     }
 
-    requestAnimationFrame(animate);
+    const minX = playerNum === 1 ? 0 : COURT_WIDTH / 2;
+    const maxX = playerNum === 1 ? COURT_WIDTH / 2 - PLAYER_WIDTH : COURT_WIDTH - PLAYER_WIDTH;
+    localPlayer.x = Math.max(minX, Math.min(maxX, localPlayer.x));
 
-    if (gameActive && localPlayer) {
-        const dt = deltaTime * 60;
-        const renderTime = now - interpolationDelay;
+    const correctionSpeed = 0.8;
+    localPlayer.x += (localPlayerTarget.x - localPlayer.x) * correctionSpeed;
+    localPlayer.y += (localPlayerTarget.y - localPlayer.y) * correctionSpeed;
 
-        // Predict local player
-        if (localInputs.left) {
-            localPlayer.velocity.x = -MOVE_SPEED;
-        } else if (localInputs.right) {
-            localPlayer.velocity.x = MOVE_SPEED;
+    const renderTime = time - interpolationDelay;
+    let stateA = null, stateB = null;
+    for (let i = stateHistory.length - 1; i >= 1; i--) {
+        if (stateHistory[i - 1].timestamp <= renderTime && stateHistory[i].timestamp >= renderTime) {
+            stateA = stateHistory[i - 1];
+            stateB = stateHistory[i];
+            break;
+        }
+    }
+    if (stateA && stateB) {
+        const alpha = (renderTime - stateA.timestamp) / (stateB.timestamp - stateA.timestamp);
+        const remoteP1X = lerp(stateA.p1.x + PLAYER_WIDTH / 2, stateB.p1.x + PLAYER_WIDTH / 2, alpha);
+        const remoteP1Y = lerp(stateA.p1.y, stateB.p1.y, alpha);
+        const remoteP2X = lerp(stateA.p2.x + PLAYER_WIDTH / 2, stateB.p2.x + PLAYER_WIDTH / 2, alpha);
+        const remoteP2Y = lerp(stateA.p2.y, stateB.p2.y, alpha);
+        const ballX = lerp(stateA.ball.x, stateB.ball.x, alpha);
+        const ballY = lerp(stateA.ball.y, stateB.ball.y, alpha);
+
+        if (playerNum === 1) {
+            remotePlayer.x = remoteP2X;
+            remotePlayer.y = remoteP2Y;
         } else {
-            localPlayer.velocity.x = 0;
+            remotePlayer.x = remoteP1X;
+            remotePlayer.y = remoteP1Y;
         }
-        if (localInputs.jump && localPlayer.position.y >= COURT_HEIGHT - PLAYER_HEIGHT) {
-            localPlayer.velocity.y = JUMP_VELOCITY;
-            localInputs.jump = false;
+        this.ball.x = ballX;
+        this.ball.y = ballY;
+        this.ball.visible = stateB.ball.visible;
+    } else if (stateHistory.length > 0) {
+        const latestState = stateHistory[stateHistory.length - 1];
+        if (playerNum === 1) {
+            remotePlayer.x = latestState.p2.x + PLAYER_WIDTH / 2;
+            remotePlayer.y = latestState.p2.y;
+        } else {
+            remotePlayer.x = latestState.p1.x + PLAYER_WIDTH / 2;
+            remotePlayer.y = latestState.p1.y;
         }
-        localPlayer.velocity.y += GRAVITY * dt;
-        localPlayer.position.x += localPlayer.velocity.x * dt;
-        localPlayer.position.y += localPlayer.velocity.y * dt;
-        const minX = playerNum === 1 ? 0 : COURT_WIDTH / 2;
-        const maxX = playerNum === 1 ? COURT_WIDTH / 2 - PLAYER_WIDTH : COURT_WIDTH - PLAYER_WIDTH;
-        localPlayer.position.x = Math.max(minX, Math.min(maxX, localPlayer.position.x));
-        localPlayer.position.y = Math.min(COURT_HEIGHT - PLAYER_HEIGHT, localPlayer.position.y);
-
-        // Smooth correction
-        const correctionSpeed = 0.8;
-        localPlayer.position.x += (localPlayerTarget.x - localPlayer.position.x) * correctionSpeed;
-        localPlayer.position.y += (localPlayerTarget.y - localPlayer.position.y) * correctionSpeed;
-
-        // Interpolate remote player and ball
-        let stateA = null, stateB = null;
-        for (let i = stateHistory.length - 1; i >= 1; i--) {
-            if (stateHistory[i - 1].timestamp <= renderTime && stateHistory[i].timestamp >= renderTime) {
-                stateA = stateHistory[i - 1];
-                stateB = stateHistory[i];
-                break;
-            }
-        }
-        if (stateA && stateB) {
-            const alpha = (renderTime - stateA.timestamp) / (stateB.timestamp - stateA.timestamp);
-            const remoteP1X = lerp(stateA.p1.x + PLAYER_WIDTH / 2, stateB.p1.x + PLAYER_WIDTH / 2, alpha);
-            const remoteP1Y = lerp(stateA.p1.y, stateB.p1.y, alpha);
-            const remoteP2X = lerp(stateA.p2.x + PLAYER_WIDTH / 2, stateB.p2.x + PLAYER_WIDTH / 2, alpha);
-            const remoteP2Y = lerp(stateA.p2.y, stateB.p2.y, alpha);
-            const ballX = lerp(stateA.ball.x, stateB.ball.x, alpha);
-            const ballY = lerp(stateA.ball.y, stateB.ball.y, alpha);
-
-            if (playerNum === 1) {
-                remotePlayer.position.x = remoteP2X;
-                remotePlayer.position.y = remoteP2Y;
-            } else {
-                remotePlayer.position.x = remoteP1X;
-                remotePlayer.position.y = remoteP1Y;
-            }
-            ball.position.x = ballX;
-            ball.position.y = ballY;
-            ball.visible = stateB.ball.visible;
-        } else if (stateHistory.length > 0) {
-            const latestState = stateHistory[stateHistory.length - 1];
-            if (playerNum === 1) {
-                remotePlayer.position.x = latestState.p2.x + PLAYER_WIDTH / 2;
-                remotePlayer.position.y = latestState.p2.y;
-            } else {
-                remotePlayer.position.x = latestState.p1.x + PLAYER_WIDTH / 2;
-                remotePlayer.position.y = latestState.p1.y;
-            }
-            ball.position.x = latestState.ball.x;
-            ball.position.y = latestState.ball.y;
-            ball.visible = latestState.ball.visible;
-        }
+        this.ball.x = latestState.ball.x;
+        this.ball.y = latestState.ball.y;
+        this.ball.visible = latestState.ball.visible;
     }
-
-    renderer.render(scene, camera);
 }
 
 function lerp(start, end, alpha) {
     return start + (end - start) * alpha;
 }
 
-animate();
+function updateScoreDisplay() {
+    if (!this || !this.scoreText) return;
+    player1ScoreElem.textContent = score[0];
+    player2ScoreElem.textContent = score[1];
+    this.scoreText.setText(`Score: ${score[0]} - ${score[1]}`);
+}
 
-// Socket.IO event handlers
+socket.on('connect', () => {
+    console.log('Connected to server:', socket.id);
+});
+
+socket.on('connect_error', (err) => {
+    console.error('Socket.IO connection error:', err.message);
+    waitingScreen.classList.add('hidden');
+    menuScreen.classList.remove('hidden');
+});
+
 socket.on('matchFound', (data) => {
+    if (gameActive) return;
+    console.log('Match found:', data);
     sessionId = data.sessionId;
     playerNum = data.playerNum;
     gameActive = true;
     waitingScreen.classList.add('hidden');
     scoreDisplay.classList.remove('hidden');
     score = [0, 0];
-    updateScoreDisplay();
+    game.scene.scenes[0].updateScoreDisplay();
     stateHistory = [];
-    localPlayer = playerNum === 1 ? player1 : player2;
-    remotePlayer = playerNum === 1 ? player2 : player1;
-    localPlayer.velocity = { x: 0, y: 0 };
+    localPlayer = playerNum === 1 ? game.scene.scenes[0].player1 : game.scene.scenes[0].player2;
+    remotePlayer = playerNum === 1 ? game.scene.scenes[0].player2 : game.scene.scenes[0].player1;
 });
 
 socket.on('gameStateUpdate', (state) => {
     state.timestamp = Date.now();
-
     stateHistory.push(state);
     if (stateHistory.length > 20) stateHistory.shift();
 
     if (playerNum === 1) {
         localPlayerTarget.x = state.p1.x + PLAYER_WIDTH / 2;
         localPlayerTarget.y = state.p1.y;
-    } else if (playerNum === 2) {
+    } else {
         localPlayerTarget.x = state.p2.x + PLAYER_WIDTH / 2;
         localPlayerTarget.y = state.p2.y;
     }
 });
 
 socket.on('scoreUpdate', (data) => {
+    if (!gameActive) return;
     score = data.score;
-    updateScoreDisplay();
+    game.scene.scenes[0].updateScoreDisplay();
 });
 
 socket.on('gameOver', (data) => {
@@ -280,11 +265,6 @@ socket.on('gameOver', (data) => {
     scoreDisplay.classList.add('hidden');
     winnerTextElem.textContent = `Player ${data.winner} wins!`;
     finalScoreElem.textContent = `Final Score: ${data.finalScore[0]} - ${data.finalScore[1]}`;
-    if ((playerNum === 1 && data.winner === 1) || (playerNum === 2 && data.winner === 2)) {
-        winnerTextElem.textContent += ' (You win!)';
-    } else {
-        winnerTextElem.textContent += ' (You lose!)';
-    }
 });
 
 socket.on('opponentDisconnect', (data) => {
@@ -296,46 +276,30 @@ socket.on('opponentDisconnect', (data) => {
     score = [0, 0];
     playerNum = 0;
     sessionId = null;
+    stateHistory = [];
+    localPlayer = null;
+    remotePlayer = null;
     console.log('Opponent disconnected:', data.reason);
 });
 
-socket.on('pong', (data) => {
-  const receivedTime = Date.now();
-  const rtt = receivedTime - data.time; // Calculate RTT
-  rttHistory.push(rtt);
-  if (rttHistory.length > maxHistory) {
-      rttHistory.shift(); // Remove oldest RTT
-  }
-  const averageRtt = rttHistory.reduce((a, b) => a + b, 0) / rttHistory.length;
-  console.log(`RTT: ${rtt}ms, Average RTT: ${averageRtt.toFixed(2)}ms`);
-});
-
-socket.on('connect', () => {
-  console.log('Transport:', socket.io.engine.transport.name);
-});
-
-// Input handling
 function handleKeyDown(e) {
     if (!gameActive) return;
     switch (e.key) {
         case 'ArrowLeft':
-            if (!keyState.left) {
-                keyState.left = true;
+            if (!localInputs.left) {
                 localInputs.left = true;
                 socket.emit('playerInput', { action: 'move', direction: 'left' });
             }
             break;
         case 'ArrowRight':
-            if (!keyState.right) {
-                keyState.right = true;
+            if (!localInputs.right) {
                 localInputs.right = true;
                 socket.emit('playerInput', { action: 'move', direction: 'right' });
             }
             break;
         case ' ':
             e.preventDefault();
-            if (!keyState.jump) {
-                keyState.jump = true;
+            if (!localInputs.jump) {
                 localInputs.jump = true;
                 socket.emit('playerInput', { action: 'jump' });
             }
@@ -347,35 +311,27 @@ function handleKeyUp(e) {
     if (!gameActive) return;
     switch (e.key) {
         case 'ArrowLeft':
-            keyState.left = false;
             localInputs.left = false;
-            if (keyState.right) {
+            if (localInputs.right) {
                 socket.emit('playerInput', { action: 'move', direction: 'right' });
             } else {
                 socket.emit('playerInput', { action: 'stop' });
             }
             break;
         case 'ArrowRight':
-            keyState.right = false;
             localInputs.right = false;
-            if (keyState.left) {
+            if (localInputs.left) {
                 socket.emit('playerInput', { action: 'move', direction: 'left' });
             } else {
                 socket.emit('playerInput', { action: 'stop' });
             }
             break;
         case ' ':
-            keyState.jump = false;
+            localInputs.jump = false;
             break;
     }
 }
 
-function updateScoreDisplay() {
-    player1ScoreElem.textContent = score[0];
-    player2ScoreElem.textContent = score[1];
-}
-
-// Event listeners
 findMatchBtn.addEventListener('click', () => {
     menuScreen.classList.add('hidden');
     waitingScreen.classList.remove('hidden');
